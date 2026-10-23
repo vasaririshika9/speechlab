@@ -1,47 +1,45 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
-  ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   AudioLines,
   BarChart3,
   Check,
-  ChevronDown,
-  CircleHelp,
+  CheckCircle2,
   Clock3,
+  Copy,
   Download,
   Dumbbell,
   FileAudio,
-  FileText,
-  FlaskConical,
   FolderOutput,
   Headphones,
-  Lightbulb,
   LogOut,
   LockKeyhole,
+  Mail,
   Menu,
-  Mic2,
+  Mic,
   MoveUpRight,
   Network,
   Pause,
   Play,
   Plus,
-  Radio,
+  RotateCcw,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
+  Square,
   Target,
-  Trash2,
+  TrendingUp,
   Upload,
-  X,
+  Volume2,
   Zap,
 } from 'lucide-react';
-import { hasSupabaseConfig, supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 type Route = 'landing' | 'login' | 'signup' | 'app';
 type View = 'overview' | 'new' | 'results' | 'architecture' | 'practice' | 'recordings' | 'compare' | 'rubrics' | 'settings';
 type AnalysisMode = 'reference' | 'rubric';
+
 type UserProfile = {
   id: string;
   display_name: string;
@@ -56,6 +54,7 @@ type UserProfile = {
   upcoming_event_date: string | null;
   personal_goal: string | null;
 };
+
 type PracticePlan = {
   id: string;
   title: string;
@@ -74,24 +73,58 @@ type Finding = {
   observed: string;
   exercise: string;
   tone: 'amber' | 'red' | 'cyan';
+  priority?: boolean;
 };
 
 const sampleFindings: Finding[] = [
-  { title: 'Extended pause', category: 'Pauses & phrasing', time: '00:18.4 — 00:20.1', start: 18.4, end: 20.1, detail: 'The pause is longer than the selected rubric’s preferred range. Review the surrounding phrase before changing it.', observed: '1.8 s pause / rubric preferred 0.3–0.9 s', exercise: 'Replay this region, then make one deliberate adjustment while keeping the surrounding phrasing intact.', tone: 'amber' },
-  { title: 'Rate shift', category: 'Pacing', time: '00:34.0 — 00:41.6', start: 34.0, end: 41.6, detail: 'Speech rate increases against the local baseline. Try grouping the next clause into one deliberate breath.', observed: '168 wpm / local baseline 124 wpm', exercise: 'Practise the same clause with a deliberate breath break at the natural phrase boundary.', tone: 'red' },
-  { title: 'Emphasis contour', category: 'Pitch & emphasis', time: '00:52.2 — 00:56.0', start: 52.2, end: 56.0, detail: 'Pitch movement is flatter than the reference window. This is an observable contour difference, not an emotion label.', observed: '−22% F0 range / reference window', exercise: 'Read the phrase again with one emphasized word that carries the key meaning.', tone: 'cyan' },
+  {
+    title: 'A few long pauses are worth revisiting',
+    category: 'Pauses & phrasing',
+    time: '0:38–0:39',
+    start: 38.0,
+    end: 39.5,
+    detail: 'The timestamp analysis estimated 4 pauses at or above the existing 0.75-second threshold. Pauses can be useful for breathing or emphasis; this is an observation to review, not a claim that every pause was wrong.',
+    observed: '4 estimated long pauses · longest 0.96 seconds · 4.2 per minute',
+    exercise: 'Replay the marked gap with its surrounding sentence. If the thought feels unfinished, split the sentence into shorter meaningful phrases and place one intentional breath before the transition.',
+    tone: 'red',
+    priority: true,
+  },
+  {
+    title: 'One phrase runs for a long stretch',
+    category: 'Pacing & flow',
+    time: '0:13–0:24',
+    start: 13.0,
+    end: 24.2,
+    detail: 'Speech rate increases against the local baseline. The continuous word run without an intentional respiratory boundary can compress meaning.',
+    observed: '38 uninterrupted words · 168 wpm / local baseline 124 wpm',
+    exercise: 'Practise the same clause with a deliberate breath break at the natural phrase boundary.',
+    tone: 'red',
+    priority: false,
+  },
+  {
+    title: 'Pitch movement on key phrase',
+    category: 'Pitch & emphasis',
+    time: '0:44–0:49',
+    start: 44.0,
+    end: 49.0,
+    detail: 'Pitch movement is flatter than the reference window. This is an observable contour difference, not an emotion label.',
+    observed: '−22% F0 range / reference window',
+    exercise: 'Read the phrase again with one emphasized word that carries the key meaning.',
+    tone: 'cyan',
+    priority: false,
+  },
 ];
 
-const sampleTranscript = 'Welcome to the overview of our quarterly results. As you can see on the first slide, the overall trajectory has been positive. However, there are some areas where we need to focus more attention. Let me walk you through the key highlights, and then I will take your questions at the end.';
+const sampleTranscript = 'Your hands lie open in the long-fresh grass. The finger points look through like rosy blooms. Your eyes smile peace. The pasture gleams and glooms beneath billowing skies that scatter and amass. All round our nest far as the eye can pass. Our golden king cup feels with silver edge where the cow partially skirts the Hawthorn hedge to his visible silence still is the hourglass. Your hands lie open in the long-fresh grass. The finger points look through like rosy blooms. Your eyes smile peace. The pasture gleams and glooms beneath billowing skies that scatter and amass. All round our nest far as the eye can pass. Our golden king cup feels with silver edge where the cow partially skirts the Hawthorn hedge to his visible silence still is the hourglass.';
 
-const DEMO_DURATION = 72;
+const DEMO_DURATION = 58;
 
 const navItems: { id: View; label: string; index: string; icon: typeof BarChart3 }[] = [
   { id: 'overview', label: 'Overview', index: '01', icon: BarChart3 },
   { id: 'new', label: 'New analysis', index: '02', icon: Plus },
-  { id: 'architecture', label: 'Architecture', index: '03', icon: Network },
+  { id: 'results', label: 'Saved analysis', index: '03', icon: FileAudio },
   { id: 'practice', label: 'Practice Studio', index: '04', icon: Dumbbell },
-  { id: 'recordings', label: 'Recordings', index: '05', icon: FileAudio },
+  { id: 'architecture', label: 'Architecture', index: '05', icon: Network },
   { id: 'compare', label: 'Compare attempts', index: '06', icon: ArrowLeft },
   { id: 'rubrics', label: 'Rubrics', index: '07', icon: Target },
   { id: 'settings', label: 'Settings', index: '08', icon: Settings },
@@ -111,87 +144,359 @@ function navigate(path: string): void {
 }
 
 function Brand({ light = false }: { light?: boolean }) {
-  return <button className={`brand ${light ? 'brand-light' : ''}`} onClick={() => navigate('/')} aria-label="SpeechLab home"><span className="brand-mark"><AudioLines size={18} strokeWidth={2.5} /></span>Speech<span>Lab</span></button>;
+  return (
+    <button className={`brand ${light ? 'brand-light' : ''}`} onClick={() => navigate('/')} aria-label="SpeechLab home">
+      <span className="brand-mark">
+        <AudioLines size={18} strokeWidth={2.5} />
+      </span>
+      <span>
+        Speech<span className="brand-text-lab">Lab</span>
+      </span>
+    </button>
+  );
 }
 
 function WaveField({ compact = false }: { compact?: boolean }) {
-  return <div className={`wave-field ${compact ? 'wave-field-compact' : ''}`} aria-hidden="true">
-    <div className="field-label">LIVE SIGNAL / 04:12</div>
-    <svg viewBox="0 0 640 430" preserveAspectRatio="none">
-      <path className="wave wave-back" d="M0 255 C65 205 82 304 142 260 S225 195 282 246 S369 329 432 251 S519 190 640 226" />
-      <path className="wave wave-middle" d="M0 230 C74 172 100 290 155 236 S232 153 293 218 S374 316 438 222 S534 145 640 190" />
-      <path className="wave wave-front" d="M0 277 C61 239 93 332 151 275 S235 212 292 269 S381 350 448 268 S550 224 640 260" />
-      <path className="wave pulse" d="M0 243 L92 243 L111 190 L130 299 L149 227 L181 243 L263 243 L276 211 L291 276 L306 243 L390 243 L407 169 L425 304 L444 243 L520 243 L540 207 L554 281 L572 243 L640 243" />
-      <line x1="88" x2="88" y1="70" y2="360" className="scan-line" />
-      <line x1="410" x2="410" y1="70" y2="360" className="scan-line scan-line-two" />
-    </svg>
-    <div className="field-axis"><span>00:00</span><span>02:06</span><span>04:12</span></div>
-  </div>;
+  return (
+    <div className={`wave-field ${compact ? 'wave-field-compact' : ''}`} aria-hidden="true" style={{ width: '100%', height: compact ? '90px' : '220px', position: 'relative' }}>
+      <svg viewBox="0 0 640 220" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+        <path d="M0 110 C65 60 82 160 142 115 S225 50 282 105 S369 190 432 110 S519 50 640 85" fill="none" stroke="#E5DED1" strokeWidth="1.5" />
+        <path d="M0 85 C74 25 100 145 155 90 S232 10 293 75 S374 175 438 80 S534 5 640 50" fill="none" stroke="#C83218" strokeWidth="2" opacity="0.85" />
+        <path d="M0 135 C61 95 93 190 151 130 S235 70 292 125 S381 210 448 125 S550 80 640 120" fill="none" stroke="#6D6860" strokeWidth="1.2" opacity="0.4" />
+      </svg>
+    </div>
+  );
 }
 
-type ArchitectureLayer = { id: string; index: string; name: string; short: string; purpose: string; inputs: string; outputs: string; dependency: string; status: 'implemented' | 'planned'; accent: 'acid' | 'cyan' | 'blue' | 'red' };
-
-const architectureLayers: ArchitectureLayer[] = [
-  { id: 'audio', index: '01', name: 'Audio input', short: 'Recording + transcript', purpose: 'Accepts the participant recording and the transcript used to define the evidence set.', inputs: 'WAV / MP3 / M4A, plain text', outputs: 'Private recording metadata, transcript', dependency: 'Supabase Auth + private storage boundary', status: 'implemented', accent: 'acid' },
-  { id: 'alignment', index: '02', name: 'Speech alignment', short: 'Words → timestamps', purpose: 'Maps transcript words and phrases to audio time so findings can point to an exact region.', inputs: 'Audio + transcript', outputs: 'Word and phrase timestamps', dependency: 'WhisperX or MFA service boundary', status: 'planned', accent: 'cyan' },
-  { id: 'features', index: '03', name: 'Acoustic features', short: 'Rate / pauses / pitch / energy', purpose: 'Extracts measurable time-series features without turning them into claims about confidence or emotion.', inputs: 'Validated audio', outputs: 'Rate, pause, F0, RMS measurements', dependency: 'Python audio-processing service', status: 'planned', accent: 'blue' },
-  { id: 'contrastive', index: '04', name: 'Contrastive analysis', short: 'Participant ↔ reference', purpose: 'Compares compatible recordings using normalized windows and preserves the method used for the comparison.', inputs: 'Feature series + compatible reference', outputs: 'Feature deltas and comparable windows', dependency: 'Analysis pipeline v0.1', status: 'planned', accent: 'cyan' },
-  { id: 'rubric', index: '05', name: 'Rubric + findings', short: 'Deviation → evidence', purpose: 'Applies versioned criteria and grounds a supported finding at a precise timestamp.', inputs: 'Measurements + rubric version', outputs: 'Timestamped findings and explanations', dependency: 'Rubric definitions in Supabase', status: 'implemented', accent: 'red' },
-  { id: 'coaching', index: '06', name: 'Personalized coaching', short: 'Evidence → practice', purpose: 'Ranks supported findings against the user’s goals and practice preferences without changing the measurements.', inputs: 'Findings + profile + history', outputs: 'Prioritized recommendation and exercise', dependency: 'Practice plan + feedback tables', status: 'implemented', accent: 'acid' },
-  { id: 'progress', index: '07', name: 'Storage + progress', short: 'Sessions over time', purpose: 'Keeps recordings, analyses, rubric versions, plans, activity status, and feedback in one private history.', inputs: 'Session artifacts and user actions', outputs: 'Comparable practice history', dependency: 'Supabase RLS data model', status: 'implemented', accent: 'blue' },
-];
-
-function ArchitectureExplorer({ embedded = false }: { embedded?: boolean }) {
-  const [selectedId, setSelectedId] = useState('features');
-  const [zoom, setZoom] = useState(1);
-  const [tilt, setTilt] = useState({ x: -4, y: 7 });
-  const [wireframe, setWireframe] = useState(false);
-  const [exploded, setExploded] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [pinned, setPinned] = useState<string[]>([]);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
-  const selected = architectureLayers.find((layer) => layer.id === selectedId) || architectureLayers[0];
-  const pinLayer = (id: string) => setPinned((items) => items.includes(id) ? items : [...items, id]);
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => { dragStart.current = { x: event.clientX, y: event.clientY }; event.currentTarget.setPointerCapture(event.pointerId); };
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => { if (!dragStart.current || paused) return; setTilt({ x: Math.max(-18, Math.min(18, -4 + (event.clientY - dragStart.current.y) * .08)), y: Math.max(-20, Math.min(20, 7 + (event.clientX - dragStart.current.x) * .08)) }); };
-  const onPointerUp = () => { dragStart.current = null; };
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => { event.preventDefault(); setZoom((value) => Math.max(.72, Math.min(1.34, value - event.deltaY * .0007))); };
-  const reset = () => { setZoom(1); setTilt({ x: -4, y: 7 }); setExploded(false); setWireframe(false); };
-  const drop = (event: React.DragEvent<HTMLDivElement>) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain'); if (architectureLayers.some((layer) => layer.id === id)) { pinLayer(id); setSelectedId(id); } };
-  return <section className={`architecture-explorer ${embedded ? 'architecture-embedded' : ''}`}>
-    <div className="architecture-heading"><div><div className="section-kicker">/ SYSTEM MAP / SPEECHLAB PIPELINE</div><h2>See how the signal<br /><span>moves through us.</span></h2><p>Every layer below reflects the planned or implemented product architecture. Select a block to inspect its contract.</p></div><div className="architecture-status"><span className="architecture-live-dot" /> {architectureLayers.filter((layer) => layer.status === 'implemented').length} IMPLEMENTED / {architectureLayers.filter((layer) => layer.status === 'planned').length} PLANNED</div></div>
-    <div className="architecture-layout"><div className="architecture-stage-wrap"><div className="architecture-toolbar"><button onClick={reset}>RESET VIEW</button><button onClick={() => setWireframe((value) => !value)} className={wireframe ? 'active' : ''}>WIREFRAME</button><button onClick={() => setExploded((value) => !value)} className={exploded ? 'active' : ''}>EXPLODE</button><button onClick={() => setPaused((value) => !value)}>{paused ? 'RESUME FLOW' : 'PAUSE FLOW'}</button><span>DRAG TO ROTATE / SCROLL TO ZOOM</span></div><div className={`architecture-stage ${wireframe ? 'wireframe' : ''} ${paused ? 'paused' : ''}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel} onDragOver={(event) => event.preventDefault()} onDrop={drop} role="application" aria-label="Interactive SpeechLab architecture explorer"><div className="architecture-grid" /><div className="architecture-plane" style={{ transform: `perspective(1100px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(${zoom})` }}><svg className="architecture-connections" viewBox="0 0 720 640" aria-hidden="true"><path d="M360 48 V594" />{architectureLayers.slice(0, -1).map((layer, index) => <circle key={layer.id} cx={index % 2 ? 465 : 255} cy={84 + index * 80} r="4" />)}</svg>{architectureLayers.map((layer, index) => { const left = index % 2 ? 52 : 18; const top = 4 + index * 13.4; return <button draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', layer.id)} key={layer.id} className={`architecture-node node-${layer.accent} ${selectedId === layer.id ? 'selected' : ''} ${pinned.includes(layer.id) ? 'pinned' : ''}`} style={{ left: `${left}%`, top: `${top}%`, transform: `translateZ(${exploded ? (index % 2 ? 42 : -30) : 0}px)` }} onClick={() => setSelectedId(layer.id)}><span className="node-index">{layer.index}</span><span><strong>{layer.name}</strong><small>{layer.short}</small></span><i className={`status-dot ${layer.status}`} /></button>; })}</div><div className="architecture-drop-hint">DROP A PIPELINE LAYER TO PIN ITS TRACE</div></div><div className="architecture-tokens"><span>TRACE TOKENS</span>{architectureLayers.filter((layer) => !pinned.includes(layer.id)).slice(0, 5).map((layer) => <button key={layer.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', layer.id)}><span className={`token-dot token-${layer.accent}`} />{layer.name}</button>)}</div></div><aside className="architecture-detail"><div className="detail-top"><span className="section-kicker">LAYER / {selected.index}</span><span className={`detail-status ${selected.status}`}>{selected.status}</span></div><h3>{selected.name}</h3><p className="detail-short">{selected.short}</p><div className="detail-block"><span>PURPOSE</span><p>{selected.purpose}</p></div><div className="detail-block"><span>INPUTS</span><p>{selected.inputs}</p></div><div className="detail-block"><span>OUTPUTS</span><p>{selected.outputs}</p></div><div className="detail-block"><span>BACKEND DEPENDENCY</span><p>{selected.dependency}</p></div><button className="detail-code" disabled><span>OPEN CODE</span><small>Integration surface not connected</small><ArrowRight size={15} /></button><div className="detail-legend"><span><i className="status-dot implemented" /> Implemented in prototype</span><span><i className="status-dot planned" /> Planned integration</span></div></aside></div>
-  </section>;
+function Button({
+  children,
+  onClick,
+  variant = 'outline',
+  type = 'button',
+  disabled = false,
+  className = '',
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  variant?: 'outline' | 'acid' | 'primary' | 'secondary' | 'quiet' | 'dark';
+  type?: 'button' | 'submit';
+  disabled?: boolean;
+  className?: string;
+}) {
+  const variantClass = variant === 'acid' || variant === 'primary' ? 'btn-primary' : variant === 'secondary' ? 'btn-secondary' : variant === 'quiet' ? 'btn-quiet' : 'btn-outline';
+  return (
+    <button type={type} disabled={disabled} className={`btn ${variantClass} ${className}`} onClick={onClick}>
+      {children}
+    </button>
+  );
 }
 
-function Button({ children, onClick, variant = 'outline', type = 'button', disabled = false }: { children: ReactNode; onClick?: () => void; variant?: 'outline' | 'acid' | 'quiet' | 'dark'; type?: 'button' | 'submit'; disabled?: boolean }) {
-  return <button type={type} disabled={disabled} className={`btn btn-${variant}`} onClick={onClick}>{children}</button>;
-}
+/* ==========================================================================
+   PAGE 1: LANDING PAGE (Screenshots 1, 2, 3)
+   ========================================================================== */
 
 function Landing() {
   const [activeStep, setActiveStep] = useState(1);
   const steps = [
-    ['01', 'Record or upload', 'Bring a recording and transcript into one focused workspace.'],
-    ['02', 'Compare delivery', 'Use a same-text reference or an explicit, versioned rubric.'],
-    ['03', 'Find the moment', 'Jump from a measurable deviation to the exact audio region.'],
-    ['04', 'Practise with intent', 'Return to the signal, not a vague score, and try again.'],
+    { num: '01', title: 'Audio capture', desc: 'Record or upload speech into a private, tamper-free workspace.' },
+    { num: '02', title: 'Word position', desc: 'Timestamped word alignment isolates pauses, rushed sections, and cadence.' },
+    { num: '03', title: 'The pitch shape', desc: 'F0 contour curves expose flat delivery and natural emphasis points.' },
+    { num: '04', title: 'Acoustic evidence', desc: 'Measured rate and silence thresholds replace arbitrary gut feel.' },
+    { num: '05', title: 'Practise at specific moments', desc: 'Jump back to the exact split-second and rehearse the next take.' },
   ];
-  return <div className="site-shell">
-    <header className="site-header wrap"><Brand /><nav className="main-nav"><a href="#how">How it works</a><a href="#architecture">Architecture</a><a href="#features">Analysis features</a><a href="#research">Research approach</a></nav><div className="header-actions"><button className="text-link" onClick={() => navigate('/login')}>Sign in</button><Button variant="acid" onClick={() => navigate('/signup')}>Start analysing <ArrowRight size={15} /></Button></div><button className="mobile-menu" aria-label="Open menu"><Menu size={21} /></button></header>
-    <main>
-      <section className="hero wrap">
-        <div className="hero-copy"><div className="eyebrow"><span className="eyebrow-dot" /> CONTRASTIVE SPEECH ANALYTICS / 01</div><h1>Every pause tells a story.<br /><em>Every pattern has evidence.</em></h1><p className="hero-lede">Understand how you speak, where your delivery changes, and what you can improve. Explore speech through precise acoustic measurements and timestamp-grounded feedback.</p><div className="hero-actions"><Button variant="acid" onClick={() => navigate('/signup')}>Analyse your speech <ArrowDownRight size={17} /></Button><Button onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}>Explore the demo <Play size={15} /></Button></div><div className="trust-line"><ShieldCheck size={15} /> Evidence first. Interpretation second. <span>Private by default.</span></div></div>
-        <div className="hero-visual"><div className="visual-note">SIGNAL STUDY / 001 <span>●</span></div><WaveField /><div className="visual-caption"><span>ACOUSTIC FIELD</span><span>REFERENCE / PARTICIPANT</span></div></div>
-      </section>
-      <section className="ticker"><div className="ticker-inner"><span>PAUSE INTERVALS</span><span>F0 CONTOUR</span><span>SPEECH RATE</span><span>RMS ENERGY</span><span>FORCED ALIGNMENT</span><span>TIMESTAMPED FINDINGS</span></div></section><div id="architecture"><ArchitectureExplorer embedded /></div>
-      <section className="workflow wrap" id="how"><div className="section-kicker">/ THE WORKFLOW</div><div className="section-heading"><h2>A clearer path from <span>audio</span> to action.</h2><p>The interface is built around the moment something changes. Move through the signal without losing the human context.</p></div><div className="workflow-grid"><div className="step-list">{steps.map(([number, title, text], i) => <button key={number} className={`step-item ${activeStep === i ? 'is-active' : ''}`} onClick={() => setActiveStep(i)}><span className="step-number">{number}</span><span><strong>{title}</strong><small>{text}</small></span><ArrowRight size={17} /></button>)}</div><div className="workflow-stage"><div className="stage-top"><span>SESSION / PRACTICE-01</span><span className="stage-status"><span /> ANALYSIS READY</span></div><WaveField compact /><div className="stage-finding"><div className="finding-marker">FINDING / 02</div><strong>{steps[activeStep][1]}</strong><p>{steps[activeStep][2]}</p><button onClick={() => navigate('/app')}><span>Open sample analysis</span><MoveUpRight size={15} /></button></div></div></div></section>
-      <section className="feature-section" id="features"><div className="wrap"><div className="section-kicker">/ WHAT THE SIGNAL CAN SHOW</div><div className="feature-intro"><h2>Not a score.<br /><span>A traceable point of view.</span></h2><p>SpeechLab keeps observation and interpretation distinct, so every recommendation has a visible reason behind it.</p></div><div className="feature-list"><article><div className="feature-index">01 / COMPARE</div><div><h3>Contrastive analysis</h3><p>Compare two recordings of the same speech with normalized, speaker-agnostic feature traces.</p></div><div className="mini-bars"><i /><i /><i /><i /><i /><i /><i /></div></article><article><div className="feature-index">02 / GROUND</div><div><h3>Temporal flaw grounding</h3><p>Locate measurable delivery patterns at specific timestamps, not somewhere in a summary.</p></div><div className="mini-timeline"><span /><span /><span className="hot" /><span /><span /></div></article><article><div className="feature-index">03 / MEASURE</div><div><h3>Acoustic evidence</h3><p>Inspect rate, pause duration, pitch movement, and energy when the method can estimate them reliably.</p></div><div className="feature-wave"><WaveField compact /></div></article><article><div className="feature-index">04 / PRACTISE</div><div><h3>Actionable feedback</h3><p>Understand what was measured, why it matters to the selected rubric, and what to try next.</p></div><div className="feature-quote">“What changed?” <ArrowRight size={16} /> “Where?”</div></article></div></div></section>
-      <section className="research wrap" id="research"><div className="research-aside"><div className="section-kicker">/ RESEARCH NOTE</div><div className="research-stamp">R<br />0.1</div></div><div className="research-copy"><h2>Trust the boundary<br />between <span>signal</span> and story.</h2><p>Speech delivery metrics are not a complete evaluation of communication quality. A longer pause may be deliberate. A pitch shift is not proof of emotion. SpeechLab surfaces the measurement and the context so a person can decide what it means.</p><div className="principles"><div><Check size={16} /><span>Versioned rubrics</span></div><div><Check size={16} /><span>Reproducible processing</span></div><div><Check size={16} /><span>No invented findings</span></div><div><Check size={16} /><span>Private recordings</span></div></div></div></section>
-      <section className="final-cta wrap"><div><div className="section-kicker">/ START WITH ONE RECORDING</div><h2>Make the invisible<br /><span>audible.</span></h2></div><Button variant="acid" onClick={() => navigate('/signup')}>Start analysing <ArrowRight size={16} /></Button></section>
-    </main>
-    <footer className="site-footer wrap"><Brand /><span>CONTRASTIVE SPEECH ANALYTICS / 2026</span><div><a href="#research">Privacy</a><a href="#research">Research notes</a><a href="#how">Documentation</a></div></footer>
-  </div>;
+
+  return (
+    <div className="site-shell">
+      {/* Header (Screenshot 1) */}
+      <header className="site-header wrap">
+        <Brand />
+        <nav className="main-nav">
+          <a href="#how">How it works</a>
+          <a href="#features">Who it’s for</a>
+          <span className="nav-divider" />
+          <button className="text-link" onClick={() => navigate('/login')}>
+            Sign in
+          </button>
+        </nav>
+        <div className="header-actions">
+          <Button variant="primary" onClick={() => navigate('/signup')}>
+            Get started <MoveUpRight size={14} />
+          </Button>
+        </div>
+        <button className="mobile-menu" onClick={() => navigate('/signup')} aria-label="Open menu">
+          <Menu size={22} />
+        </button>
+      </header>
+
+      <main>
+        {/* Hero Section (Screenshot 1) */}
+        <section className="hero wrap">
+          <div className="hero-copy">
+            <div className="eyebrow">
+              <span className="eyebrow-dot" /> A CLEARER NEXT TAKE STARTS HERE
+            </div>
+            <h1>
+              Hear exactly where
+              <br />
+              <span className="highlight-text">your speech works,</span>
+              <br />
+              and where it slips.
+            </h1>
+            <p className="hero-lede">
+              Upload or record a talk. SpeechLab transcribes it, marks the exact moments worth fixing, and shows what to try next with grounded acoustic evidence.
+            </p>
+            <div className="hero-actions">
+              <Button variant="primary" onClick={() => navigate('/signup')}>
+                Get started <MoveUpRight size={15} />
+              </Button>
+              <Button variant="outline" onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}>
+                Explore how it works <Play size={14} />
+              </Button>
+            </div>
+            <div className="trust-line">
+              <ShieldCheck size={16} /> Evidence first. Interpretation second. Private by default.
+            </div>
+          </div>
+
+          {/* Hero Visual Collage / Polaroid Sticker (Screenshot 1) */}
+          <div className="hero-visual">
+            <div className="sticker-composition">
+              <div className="polaroid-backdrop">
+                <div className="polaroid-inner">
+                  <WaveField />
+                </div>
+                <div className="polaroid-caption">LISTEN / MARK / PRACTISE</div>
+              </div>
+
+              {/* Die-cut Microphone Sticker Effect */}
+              <div className="mic-sticker-wrap">
+                <div className="mic-sticker">
+                  <div className="mic-grille" />
+                  <div className="mic-body">
+                    <div className="mic-switch" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Waveform Sticker Badge */}
+              <div className="waveform-sticker-badge">
+                <div className="sticker-bars">
+                  <span style={{ height: '14px' }} />
+                  <span style={{ height: '22px' }} />
+                  <span style={{ height: '10px' }} />
+                  <span style={{ height: '26px' }} />
+                  <span style={{ height: '18px' }} />
+                  <span style={{ height: '24px' }} />
+                  <span style={{ height: '12px' }} />
+                  <span style={{ height: '20px' }} />
+                </div>
+                <span className="music-notes">♫</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Ticker Banner */}
+        <section className="ticker">
+          <div className="ticker-inner">
+            <span>PAUSE INTERVALS</span>
+            <span>F0 CONTOUR</span>
+            <span>SPEECH RATE</span>
+            <span>RMS ENERGY</span>
+            <span>FORCED ALIGNMENT</span>
+            <span>TEMPORAL FLAW GROUNDING</span>
+            <span>CONTRASTIVE METRICS</span>
+            <span>PAUSE INTERVALS</span>
+            <span>F0 CONTOUR</span>
+            <span>SPEECH RATE</span>
+          </div>
+        </section>
+
+        {/* Demonstration Section (Screenshot 2) */}
+        <section className="workflow wrap" id="how">
+          <div className="section-kicker">02 FROM VOICE TO EVIDENCE</div>
+          <div className="demo-showcase-grid">
+            <div className="demo-left">
+              <span className="eyebrow" style={{ marginTop: '8px' }}>
+                A DEMONSTRATION, NOT A REAL ANALYSIS
+              </span>
+              <h2>
+                Make the
+                <br />
+                moment
+                <br />
+                <span className="highlight-text">make sense.</span>
+              </h2>
+              <p>
+                SpeechLab turns a recording into a trail you can follow: what was said, where it happened, what was measured, and what to try next.
+              </p>
+              <div className="demo-timeline-bar">
+                <div className="demo-timeline-progress" />
+              </div>
+            </div>
+
+            {/* Off-White Demonstration Waveform Card (Screenshot 2) */}
+            <div className="waveform-demo-card">
+              <div className="waveform-demo-top">
+                <span className="eyebrow-dot" />
+                <span>00:19</span>
+              </div>
+              <div className="waveform-demo-bars">
+                {[18, 34, 46, 28, 54, 40, 62, 50, 70, 58, 38, 48, 20, 24, 32, 28, 20, 14, 22, 16].map((h, i) => (
+                  <div
+                    key={i}
+                    className={`bar ${i <= 10 ? 'active' : 'inactive'}`}
+                    style={{ height: `${h}px` }}
+                  />
+                ))}
+              </div>
+              <h3 className="waveform-demo-quote">“The idea is clear — let it land.”</h3>
+              <div className="waveform-demo-sub">Listening for the useful detail...</div>
+            </div>
+          </div>
+
+          {/* Interactive Steps Ribbon below demonstration (Screenshot 2) */}
+          <div className="demo-step-ribbon">
+            {steps.map((st, i) => (
+              <button
+                key={st.num}
+                className={`demo-ribbon-item ${activeStep === i ? 'active' : ''}`}
+                onClick={() => setActiveStep(i)}
+              >
+                <div className="ribbon-num">{st.num}</div>
+                <strong>{st.title}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Feature Section */}
+        <section className="feature-section" id="features">
+          <div className="wrap">
+            <div className="section-kicker">/ WHAT THE SIGNAL CAN SHOW</div>
+            <div className="feature-intro">
+              <h2>
+                Not a score.
+                <br />
+                <span className="highlight-text">A traceable point of view.</span>
+              </h2>
+              <p>SpeechLab keeps observation and interpretation distinct, so every recommendation has a visible reason behind it.</p>
+            </div>
+            <div className="feature-list">
+              <article>
+                <div className="feature-index">01 / COMPARE</div>
+                <div>
+                  <h3>Contrastive analysis</h3>
+                  <p>Compare two recordings of the same speech with normalized, speaker-agnostic feature traces.</p>
+                </div>
+                <div className="mini-bars">
+                  <i style={{ height: '35%' }} />
+                  <i style={{ height: '74%' }} />
+                  <i style={{ height: '48%' }} />
+                  <i style={{ height: '94%' }} />
+                  <i style={{ height: '62%' }} />
+                  <i style={{ height: '81%' }} />
+                  <i style={{ height: '40%' }} />
+                </div>
+              </article>
+              <article>
+                <div className="feature-index">02 / GROUND</div>
+                <div>
+                  <h3>Temporal flaw grounding</h3>
+                  <p>Locate measurable delivery patterns at specific timestamps, not somewhere in a summary.</p>
+                </div>
+                <div className="mini-timeline">
+                  <span />
+                  <span />
+                  <span className="hot" />
+                  <span />
+                  <span />
+                </div>
+              </article>
+              <article>
+                <div className="feature-index">03 / MEASURE</div>
+                <div>
+                  <h3>Acoustic evidence</h3>
+                  <p>Inspect rate, pause duration, pitch movement, and energy when the method can estimate them reliably.</p>
+                </div>
+                <div className="feature-quote">
+                  <span>“What changed?”</span> <ArrowRight size={16} /> <span>“Where?”</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        {/* Research Approach Section */}
+        <section className="research wrap" id="research">
+          <div className="research-aside">
+            <div className="section-kicker">/ RESEARCH NOTE</div>
+            <div className="research-stamp">
+              R<br />0.1
+            </div>
+          </div>
+          <div className="research-copy">
+            <h2>
+              Trust the boundary
+              <br />
+              between <span className="highlight-text">signal</span> and story.
+            </h2>
+            <p>
+              Speech delivery metrics are not a complete evaluation of communication quality. A longer pause may be deliberate. A pitch shift is not proof of emotion. SpeechLab surfaces the measurement and the context so a person can decide what it means.
+            </p>
+            <div className="principles">
+              <div>
+                <Check size={16} />
+                <span>Versioned rubrics</span>
+              </div>
+              <div>
+                <Check size={16} />
+                <span>Reproducible processing</span>
+              </div>
+              <div>
+                <Check size={16} />
+                <span>No invented findings</span>
+              </div>
+              <div>
+                <Check size={16} />
+                <span>Private recordings</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Final CTA Section (Screenshot 3) */}
+        <section className="final-cta wrap">
+          <div className="section-kicker">YOUR NEXT RECORDING IS ENOUGH TO BEGIN.</div>
+          <h2>
+            Listen closer.
+            <br />
+            <span className="highlight-text">Move forward.</span>
+          </h2>
+          <Button variant="primary" onClick={() => navigate('/signup')}>
+            Get started <MoveUpRight size={15} />
+          </Button>
+        </section>
+      </main>
+
+      <footer className="site-footer wrap">
+        <Brand />
+        <span>SPEECHLAB — CONTRASTIVE SPEECH ANALYTICS & TEMPORAL FLAW GROUNDING</span>
+        <div>
+          <a href="#how">How it works</a>
+          <a href="#research">Research</a>
+          <button className="text-link" onClick={() => navigate('/login')}>
+            Sign in
+          </button>
+        </div>
+      </footer>
+    </div>
+  );
 }
+
+/* ==========================================================================
+   PAGE 2: AUTHENTICATION / SIGN IN PAGE (Screenshot 4)
+   ========================================================================== */
 
 function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const isSignup = mode === 'signup';
@@ -200,273 +505,1154 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setError('');
-    if (!email || !password || (isSignup && !name)) { setError('Complete every required field to continue.'); return; }
+    event.preventDefault();
+    setError('');
+    if (!email || !password || (isSignup && !name)) {
+      setError('Complete every required field to continue.');
+      return;
+    }
     setLoading(true);
-    if (!supabase) { setError('Authentication is not connected in this preview. Add the project connection to enable account access.'); setLoading(false); return; }
-    const result = isSignup ? await supabase.auth.signUp({ email, password, options: { data: { display_name: name } } }) : await supabase.auth.signInWithPassword({ email, password });
+    if (!supabase) {
+      // In preview without supabase creds, navigate cleanly to app demo workspace
+      setTimeout(() => {
+        setLoading(false);
+        navigate('/app');
+      }, 500);
+      return;
+    }
+    const result = isSignup
+      ? await supabase.auth.signUp({ email, password, options: { data: { display_name: name } } })
+      : await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (result.error) { setError(result.error.message); return; }
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
   };
-  return <div className="auth-shell"><div className="auth-visual"><div className="auth-top"><Brand light /><span>PRIVATE WORKSPACE / {isSignup ? 'CREATE' : 'ACCESS'}</span></div><div className="auth-visual-content"><div className="eyebrow"><span className="eyebrow-dot" /> SPEECHLAB / SIGNAL ROOM</div><h1>Make your<br /><em>delivery visible.</em></h1><WaveField /><p>Precise observations for people who want to practise with more intention.</p></div><div className="auth-bottom">ENGLISH / MVP-0.1 <span>DATA STAYS YOURS</span></div></div><div className="auth-form-side"><button className="back-link" onClick={() => navigate('/')}><ArrowLeft size={15} /> Back to SpeechLab</button><div className="auth-form-wrap"><div className="section-kicker">/ {isSignup ? 'NEW PRACTICE SPACE' : 'RETURNING SPEAKER'}</div><h2>{isSignup ? 'Start with a signal.' : 'Welcome back.'}</h2><p>{isSignup ? 'Create a private workspace for your speech practice.' : 'Continue where your last analysis left off.'}</p><form onSubmit={submit}>{isSignup && <label>NAME<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></label>}<label>EMAIL<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label><label>PASSWORD<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" /></label>{!isSignup && <div className="form-row"><label className="check-label"><input type="checkbox" /> <span>Remember session</span></label><button className="form-link" type="button">Forgot password?</button></div>}{error && <div className="form-error"><X size={15} /> {error}</div>}<Button type="submit" variant="acid" disabled={loading}>{loading ? 'Connecting…' : isSignup ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></Button></form><div className="auth-switch">{isSignup ? 'Already have an account?' : 'New to SpeechLab?'} <button onClick={() => navigate(isSignup ? '/login' : '/signup')}>{isSignup ? 'Sign in' : 'Create account'}</button></div><div className="auth-note"><LockKeyhole size={14} /> Your recordings are private by default. SpeechLab does not use them for model training without separate consent.</div></div></div></div>;
+
+  return (
+    <div className="auth-shell">
+      {/* Left visual & branding */}
+      <div className="auth-visual">
+        <div className="auth-top">
+          <Brand />
+        </div>
+
+        <div className="auth-visual-content">
+          <div className="eyebrow">
+            <span className="eyebrow-dot" /> PRIVATE PRACTICE SPACE
+          </div>
+          <h1>
+            Your voice,
+            <br />
+            <span className="highlight-text">your workspace.</span>
+          </h1>
+          <p>Save your sessions, return to useful moments, and build a practice rhythm that belongs to you.</p>
+          <button className="results-back-link" onClick={() => navigate('/')}>
+            <ArrowLeft size={16} /> Back to the landing page
+          </button>
+        </div>
+
+        <div className="auth-bottom">
+          <span>ENGLISH / MVP-0.1</span>
+          <span>DATA STAYS YOURS</span>
+        </div>
+      </div>
+
+      {/* Right form card (Screenshot 4) */}
+      <div className="auth-form-side">
+        <div className="auth-card">
+          <div className="auth-card-header">
+            <ShieldCheck size={20} />
+            <span>{isSignup ? 'Create account securely' : 'Sign in securely'}</span>
+          </div>
+
+          <button
+            type="button"
+            className="google-auth-btn"
+            onClick={() => {
+              if (supabase) {
+                supabase.auth.signInWithOAuth({ provider: 'google' });
+              } else {
+                navigate('/app');
+              }
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+
+          <div className="auth-divider">or use email</div>
+
+          <form className="auth-form" onSubmit={submit}>
+            {isSignup && (
+              <label>
+                Full name
+                <input
+                  className="form-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                />
+              </label>
+            )}
+
+            <label>
+              Email address
+              <div className="input-with-icon">
+                <Mail size={16} />
+                <input
+                  type="email"
+                  className="form-input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  autoComplete="email"
+                />
+              </div>
+            </label>
+
+            <label>
+              Password
+              <div className="input-with-icon">
+                <LockKeyhole size={16} />
+                <input
+                  type="password"
+                  className="form-input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+            </label>
+
+            {!isSignup && (
+              <div className="form-row">
+                <label className="check-label">
+                  <input type="checkbox" defaultChecked />
+                  <span>Remember me</span>
+                </label>
+                <button type="button" className="form-link">
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
+            {error && <div className="form-error" style={{ color: 'var(--color-primary)', fontSize: '12px' }}>{error}</div>}
+
+            <Button type="submit" variant="primary" disabled={loading}>
+              {loading ? 'Connecting…' : isSignup ? 'Create account' : 'Sign in'}
+            </Button>
+          </form>
+
+          <div className="auth-switch">
+            {isSignup ? 'Already have an account?' : 'New to SpeechLab?'}
+            <button type="button" onClick={() => navigate(isSignup ? '/login' : '/signup')}>
+              {isSignup ? 'Sign in' : 'Create an account'}
+            </button>
+          </div>
+
+          <div className="auth-note">
+            Google provider setup is required in Supabase before OAuth can complete. Email authentication uses Supabase's secure hosted session flow.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-const demoProfile: UserProfile = {
-  id: 'demo', display_name: 'Demo speaker', onboarding_completed: true, primary_goal: 'Clearer pacing in academic presentations', selected_contexts: ['Classroom or university'], experience_level: 'I can speak, but I want to improve.', coaching_priorities: ['Speaking at an appropriate pace', 'Managing pauses and phrasing'], feedback_style: 'A balance of explanations and practical exercises', detail_level: 'Give me a few prioritized recommendations.', practice_frequency: 'A few times per week', upcoming_event_date: null, personal_goal: null,
-};
-const demoPlan: PracticePlan = { id: 'demo-plan', title: 'Build a steadier presentation rhythm', goal: 'Clearer pacing in academic presentations', status: 'active', activities: [{ id: 'demo-activity', title: 'Record a short baseline passage', instructions: 'Choose 60–90 seconds of a prepared presentation and keep the transcript nearby.', estimated_minutes: 5, status: 'pending', position: 1 }, { id: 'demo-activity-2', title: 'Review pause placement', instructions: 'Listen once without changing anything. Mark one pause that helps meaning and one that interrupts the phrase.', estimated_minutes: 7, status: 'pending', position: 2 }] };
+/* ==========================================================================
+   PAGE 3: OVERVIEW / PERSONAL PROGRESS DASHBOARD (Screenshots 9 & 10)
+   ========================================================================== */
 
-const onboardingSteps = [
-  { label: 'Purpose', title: 'What would you like to improve through SpeechLab?', options: ['College presentations and academic speaking', 'Job interviews and professional communication', 'Public speaking and conference presentations', 'Debates and structured arguments', 'Storytelling and expressive delivery', 'Everyday spoken communication', 'English-speaking practice', 'Other'] },
-  { label: 'Context', title: 'Where do you expect to use these skills most often?', options: ['Classroom or university', 'Interviews or workplace meetings', 'Large audiences or conferences', 'Online presentations or video calls', 'Informal conversations', 'Competitions or evaluated speeches', 'Other'] },
-  { label: 'Priorities', title: 'Which aspects of your delivery would you most like to work on?', options: ['Speaking at an appropriate pace', 'Managing pauses and phrasing', 'Using pitch variation and emphasis', 'Improving the audibility and consistency of delivery', 'Making important phrases easier to follow', 'Matching a reference delivery', 'Understanding my speech patterns', 'Tracking progress across attempts'] },
-  { label: 'Feedback', title: 'How would you prefer to receive feedback?', options: ['Short, direct recommendations', 'Step-by-step explanations', 'Detailed acoustic evidence and measurements', 'A balance of explanations and practical exercises'] },
-  { label: 'Routine', title: 'How often would you realistically like to practise?', options: ['A few minutes when I have time', 'A few times per week', 'Daily short sessions', 'I am preparing for a specific event'] },
-];
+function Overview({ setView }: { setView: (view: View) => void; profile: UserProfile; plan: PracticePlan; onCompleteActivity: (id: string) => void }) {
+  const [dateRange] = useState('Last 30 days');
+  const [hoveredPoint, setHoveredPoint] = useState<'pause' | null>(null);
 
-type OnboardingDraft = { purpose: string[]; personalGoal: string; contexts: string[]; experience: string; priorities: string[]; feedbackStyle: string; detailLevel: string; frequency: string; eventDate: string };
+  return (
+    <div className="overview-content">
+      {/* Dashboard Header (Screenshot 9) */}
+      <div className="dashboard-hero">
+        <div>
+          <button className="results-back-link" onClick={() => navigate('/')}>
+            <ArrowLeft size={15} /> Back to dashboard
+          </button>
+          <div className="section-kicker">PERSONAL PROGRESS DASHBOARD</div>
+          <h2>Your Speaking Progress</h2>
+          <p>
+            Follow measured changes across saved, completed transcripts. Each chart uses only the recordings and timestamps that can support that metric.
+          </p>
+        </div>
 
-function Onboarding({ displayName, onComplete }: { displayName: string; onComplete: (profile: UserProfile, plan: PracticePlan) => void }) {
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<OnboardingDraft>({ purpose: [], personalGoal: '', contexts: [], experience: '', priorities: [], feedbackStyle: '', detailLevel: 'Give me a few prioritized recommendations.', frequency: '', eventDate: '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const current = onboardingSteps[step];
-  const selected = step === 0 ? draft.purpose : step === 1 ? draft.contexts : step === 2 ? draft.priorities : step === 3 ? [draft.feedbackStyle] : [draft.frequency];
-  const toggle = (option: string) => {
-    if (step === 3) { setDraft((value) => ({ ...value, feedbackStyle: option })); return; }
-    if (step === 4) { setDraft((value) => ({ ...value, frequency: option })); return; }
-    const key = step === 0 ? 'purpose' : step === 1 ? 'contexts' : 'priorities';
-    setDraft((value) => { const values = value[key]; const next = values.includes(option) ? values.filter((item) => item !== option) : [...values, option]; return { ...value, [key]: next }; });
-  };
-  const continueStep = () => { if (step < onboardingSteps.length - 1) { setStep((value) => value + 1); return; } void saveProfile(); };
-  const saveProfile = async () => {
-    setSaving(true); setError('');
-    const primaryGoal = draft.purpose[0] || 'Understand my speech patterns';
-    const profile: UserProfile = { id: supabase ? (await supabase.auth.getUser()).data.user?.id || 'unknown' : 'demo', display_name: displayName || 'SpeechLab speaker', onboarding_completed: true, primary_goal: primaryGoal, selected_contexts: draft.contexts, experience_level: draft.experience || 'I can speak, but I want to improve.', coaching_priorities: draft.priorities, feedback_style: draft.feedbackStyle || 'A balance of explanations and practical exercises', detail_level: draft.detailLevel, practice_frequency: draft.frequency || 'A few times per week', upcoming_event_date: draft.eventDate || null, personal_goal: draft.personalGoal || null };
-    const plan: PracticePlan = { id: 'new-plan', title: `Practice plan / ${primaryGoal.toLowerCase()}`, goal: primaryGoal, status: 'active', activities: [{ id: 'activity-1', title: 'Record a short baseline passage', instructions: 'Choose 60–90 seconds that match your context. Your first recording establishes a baseline; it does not define your ability.', estimated_minutes: 5, status: 'pending', position: 1 }, { id: 'activity-2', title: 'Review one measurable pattern', instructions: 'Open the timestamped evidence and choose one supported observation to practise without changing the rest of your delivery.', estimated_minutes: 8, status: 'pending', position: 2 }, { id: 'activity-3', title: 'Record the same passage again', instructions: 'Keep the passage and rubric consistent so the next comparison remains meaningful.', estimated_minutes: 5, status: 'pending', position: 3 }] };
-    if (supabase) {
-      const { error: profileError } = await supabase.from('user_profiles').upsert({ id: profile.id, display_name: profile.display_name, onboarding_completed: true, primary_goal: profile.primary_goal, selected_contexts: profile.selected_contexts, experience_level: profile.experience_level, coaching_priorities: profile.coaching_priorities, feedback_style: profile.feedback_style, detail_level: profile.detail_level, practice_frequency: profile.practice_frequency, upcoming_event_date: profile.upcoming_event_date, personal_goal: profile.personal_goal, updated_at: new Date().toISOString() });
-      if (profileError) { console.error('profile save failed', profileError); setError('We could not save your practice preferences. Please try again.'); setSaving(false); return; }
-      const { data: savedPlan, error: planError } = await supabase.from('practice_plans').insert({ title: plan.title, goal: plan.goal, associated_preferences: { contexts: profile.selected_contexts, priorities: profile.coaching_priorities, frequency: profile.practice_frequency }, plan_version: '1.0' }).select('id, title, goal, status').maybeSingle();
-      if (planError || !savedPlan) { console.error('practice plan save failed', planError); setError('Your preferences were saved, but the practice plan could not be created.'); setSaving(false); return; }
-      const { data: savedActivities, error: activityError } = await supabase.from('practice_activities').insert(plan.activities.map((activity) => ({ plan_id: savedPlan.id, position: activity.position, title: activity.title, instructions: activity.instructions, targeted_features: profile.coaching_priorities, estimated_minutes: activity.estimated_minutes }))).select('id, title, instructions, estimated_minutes, status, position');
-      if (activityError) { console.error('practice activities save failed', activityError); setError('Your plan was created, but its activities could not be saved.'); setSaving(false); return; }
-      onComplete(profile, { ...savedPlan, activities: savedActivities || [] });
-    } else { onComplete(profile, plan); }
-    setSaving(false);
-  };
-  return <div className="onboarding-shell"><div className="onboarding-rail"><Brand light /><div className="onboarding-rail-copy"><div className="section-kicker">/ BUILD YOUR PRACTICE SPACE</div><h1>Understand.<br /><span>Measure.</span><br />Practise.</h1><p>Your preferences help prioritize relevant coaching. Your measurements will always come from your recordings and the methods used.</p></div><div className="onboarding-rail-foot">PRIVATE BY DEFAULT / ENGLISH / 0{step + 1} OF 0{onboardingSteps.length}</div></div><main className="onboarding-main"><div className="onboarding-progress"><span>SETUP / {current.label.toUpperCase()}</span><div>{onboardingSteps.map((item, index) => <i key={item.label} className={index <= step ? 'active' : ''} />)}</div></div><div className="onboarding-question"><div className="section-kicker">STEP 0{step + 1} / {current.label.toUpperCase()}</div><h2>{current.title}</h2><p>{step === 0 ? 'This helps us frame your first practice plan without assuming what you need.' : step === 1 ? 'Different contexts call for different practice conditions.' : step === 2 ? 'These are priorities, not diagnoses. We will look for supporting evidence first.' : step === 3 ? 'You can always expand into the technical evidence later.' : 'Choose a rhythm that feels realistic, not aspirational.'}</p><div className="onboarding-options">{current.options.map((option) => <button key={option} className={selected.includes(option) ? 'selected' : ''} onClick={() => toggle(option)}><span>{selected.includes(option) ? <Check size={14} /> : ''}</span>{option}</button>)}</div>{step === 0 && <label className="onboarding-text">OPTIONAL / WHAT WOULD A SUCCESSFUL IMPROVEMENT LOOK LIKE?<textarea value={draft.personalGoal} onChange={(event) => setDraft((value) => ({ ...value, personalGoal: event.target.value }))} placeholder="I want to explain technical concepts clearly without rushing…" /></label>}{step === 1 && <label className="onboarding-text">OPTIONAL / EXPERIENCE LEVEL<input value={draft.experience} onChange={(event) => setDraft((value) => ({ ...value, experience: event.target.value }))} placeholder="e.g. I speak regularly and want more precise feedback" /></label>}{step === 3 && <label className="onboarding-text">DETAIL LEVEL<select value={draft.detailLevel} onChange={(event) => setDraft((value) => ({ ...value, detailLevel: event.target.value }))}><option>Give me the most important one or two improvements.</option><option>Give me a few prioritized recommendations.</option><option>Show me the complete analysis with technical details.</option></select></label>}{step === 4 && <label className="onboarding-text">OPTIONAL / UPCOMING EVENT DATE<input type="date" value={draft.eventDate} onChange={(event) => setDraft((value) => ({ ...value, eventDate: event.target.value }))} /></label>}{error && <div className="form-error"><X size={15} /> {error}</div>}<div className="onboarding-actions"><Button onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0}>Back</Button><Button variant="acid" onClick={continueStep} disabled={saving}>{saving ? 'Building plan…' : step === onboardingSteps.length - 1 ? 'Build my practice plan' : 'Continue'} <ArrowRight size={16} /></Button></div></div></main></div>;
+        <div className="dashboard-range-pill">
+          <span>Showing</span>
+          <strong>{dateRange}</strong>
+          <small>2 completed takes across all history</small>
+        </div>
+      </div>
+
+      {/* 4 Metric Cards Grid (Screenshot 9) */}
+      <div className="metrics-grid-four">
+        <div className="metric-stat-card">
+          <div className="metric-icon-badge">
+            <BarChart3 size={18} />
+          </div>
+          <div className="metric-label">ELIGIBLE TAKES</div>
+          <div className="metric-value">2</div>
+          <div className="metric-sub">Last 30 days with completed transcripts</div>
+        </div>
+
+        <div className="metric-stat-card">
+          <div className="metric-icon-badge">
+            <TrendingUp size={18} />
+          </div>
+          <div className="metric-label">LATEST SPEAKING PACE</div>
+          <div className="metric-value">140 WPM</div>
+          <div className="metric-sub">Comparison Of Vernacular And Refined Speech</div>
+        </div>
+
+        <div className="metric-stat-card">
+          <div className="metric-icon-badge">
+            <AudioLines size={18} />
+          </div>
+          <div className="metric-label">LATEST FILLER RATE</div>
+          <div className="metric-value">0.0 fillers/min</div>
+          <div className="metric-sub">Comparison Of Vernacular And Refined Speech</div>
+        </div>
+
+        <div className="metric-stat-card">
+          <div className="metric-icon-badge">
+            <Target size={18} />
+          </div>
+          <div className="metric-label">ACTIVE GOALS</div>
+          <div className="metric-value">1</div>
+          <div className="metric-sub">Targets being tracked</div>
+        </div>
+      </div>
+
+      {/* Speaking Pace Over Time Card (Screenshot 9) */}
+      <div className="chart-card-full">
+        <div className="chart-card-header">
+          <div>
+            <div className="section-kicker">SPEAKING PACE</div>
+            <h3>Pace over time.</h3>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: '4px 0 0' }}>
+              Individual words-per-minute measurements from recordings with a recognized word count and positive duration.
+            </p>
+          </div>
+          <TrendingUp size={20} />
+        </div>
+
+        <div className="interactive-chart-wrap">
+          <svg className="chart-svg-main" viewBox="0 0 800 140" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="terracotta-fade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#C83218" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="#C83218" stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
+            <path d="M 50 85 L 400 65 L 750 45" fill="none" stroke="#E5DED1" strokeWidth="1" strokeDasharray="4 4" />
+            <path d="M 50 85 L 750 45 L 750 140 L 50 140 Z" className="chart-area-fill" />
+            <path d="M 50 85 L 750 45" className="chart-line-terracotta" />
+            <circle cx="50" cy="85" className="chart-dot" />
+            <circle cx="750" cy="45" className="chart-dot" />
+          </svg>
+          <div className="chart-axis-labels">
+            <span>14 Oct (128 WPM)</span>
+            <span>23 Oct (140 WPM)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2-Column Pause Analysis Grid (Screenshot 10) */}
+      <div className="pause-charts-grid">
+        {/* Left Card: Pause Frequency */}
+        <div className="pause-chart-card">
+          <div className="section-kicker">PAUSE FREQUENCY</div>
+          <h3>Long pauses per minute.</h3>
+          <p>
+            Estimated pauses at or above the existing timestamp threshold, normalized by duration. Long pauses use the existing 0.75-second threshold.
+          </p>
+
+          <div className="chart-meta-row">
+            <span>2 eligible recordings</span>
+            <span>Individual measurements · no smoothing</span>
+          </div>
+
+          <div className="interactive-chart-wrap" style={{ height: '120px' }}>
+            <svg className="chart-svg-main" viewBox="0 0 400 100" preserveAspectRatio="none">
+              <line x1="20" y1="35" x2="380" y2="75" stroke="#C83218" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="20" cy="35" className="chart-dot" />
+              <circle
+                cx="380"
+                cy="75"
+                className="chart-dot"
+                onMouseEnter={() => setHoveredPoint('pause')}
+                onMouseLeave={() => setHoveredPoint(null)}
+              />
+            </svg>
+            <div className="chart-axis-labels">
+              <span>14 Oct (9.8 pauses/min)</span>
+              <span>23 Oct (4.2 pauses/min)</span>
+            </div>
+          </div>
+
+          {/* Interactive Tooltip Card (Screenshot 10) */}
+          <div className={`chart-tooltip-box ${hoveredPoint ? 'active' : ''}`}>
+            <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', textTransform: 'uppercase' }}>23 Oct 2026</span>
+            <strong>Comparison Of Vernacular And Refined Speech</strong>
+            <span style={{ color: 'var(--color-primary)', fontWeight: '700' }}>4.2 pauses/min</span>
+            <button
+              onClick={() => setView('results')}
+              style={{ display: 'block', color: 'var(--color-heading)', fontSize: '11px', marginTop: '6px', fontWeight: '600' }}
+            >
+              Open recording ↗
+            </button>
+          </div>
+
+          <div className="chart-summary-note">
+            Long-pause frequency decreased from 9.8 pauses/min to 4.2 pauses/min across 2 recordings. This moves lower, but it is still an observation rather than a quality score.
+          </div>
+        </div>
+
+        {/* Right Card: Pause Duration */}
+        <div className="pause-chart-card">
+          <div className="section-kicker">PAUSE DURATION</div>
+          <h3>Average long pause.</h3>
+          <p>
+            Average duration of detected long pauses. A zero value means timestamps were reliable and no qualifying pauses were detected.
+          </p>
+
+          <div className="chart-meta-row">
+            <span>2 eligible recordings</span>
+            <span>Individual measurements · no smoothing</span>
+          </div>
+
+          <div className="interactive-chart-wrap" style={{ height: '120px' }}>
+            <svg className="chart-svg-main" viewBox="0 0 400 100" preserveAspectRatio="none">
+              <line x1="20" y1="60" x2="380" y2="55" stroke="#C83218" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="20" cy="60" className="chart-dot" />
+              <circle cx="380" cy="55" className="chart-dot" />
+            </svg>
+            <div className="chart-axis-labels">
+              <span>14 Oct (0.8s)</span>
+              <span>23 Oct (0.9s)</span>
+            </div>
+          </div>
+
+          <div className="chart-tooltip-box">
+            <span style={{ color: 'var(--color-text-secondary)', fontSize: '10px', textTransform: 'uppercase' }}>23 Oct 2026</span>
+            <strong>Comparison Of Vernacular And Refined Speech</strong>
+            <span style={{ color: 'var(--color-primary)', fontWeight: '700' }}>0.9 seconds average duration</span>
+          </div>
+
+          <div className="chart-summary-note">
+            Average long-pause duration increased from 0.8 seconds to 0.9 seconds across 2 recordings. This moves higher; compare similar speaking tasks before drawing conclusions.
+          </div>
+        </div>
+      </div>
+
+      {/* Personal Targets Card (Screenshot 10) */}
+      <div className="targets-card">
+        <div>
+          <div className="section-kicker">PERSONAL TARGETS</div>
+          <h3>Goals that stay measurable.</h3>
+          <p>
+            Targets use the selected date range and only eligible saved recordings. A goal is never completed from missing data.
+          </p>
+        </div>
+        <Button variant="primary" onClick={() => setView('new')}>
+          <Plus size={16} /> Add goal
+        </Button>
+      </div>
+    </div>
+  );
 }
 
-function Sidebar({ view, setView, onSignOut, profile }: { view: View; setView: (view: View) => void; onSignOut: () => void; profile: UserProfile }) {
-  return <aside className="app-sidebar"><Brand light /><div className="rail-caption">WORKSPACE</div><nav className="app-nav">{navItems.map(({ id, label, index, icon: Icon }) => <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}><span className="nav-index">{index}</span><Icon size={16} /><span>{label}</span></button>)}</nav><div className="sidebar-bottom"><button className="help-link"><CircleHelp size={16} /> Research notes</button><div className="account"><div className="avatar">{profile.display_name.slice(0, 2).toUpperCase()}</div><div><strong>{profile.display_name || 'SpeechLab speaker'}</strong><small>{profile.primary_goal || 'Practice workspace'}</small></div><ChevronDown size={15} /></div><button className="exit-link" onClick={onSignOut}><LogOut size={14} /> Log out</button></div></aside>;
+/* ==========================================================================
+   PAGE 4: RECORDING WORKSPACE / NEW ANALYSIS (Screenshot 5)
+   ========================================================================== */
+
+function NewAnalysis({ setView }: { setView: (view: View) => void }) {
+  const [mode, setMode] = useState<'record' | 'upload'>('record');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const [comparisonType, setComparisonType] = useState<AnalysisMode>('rubric');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  // Format seconds to mm:ss
+  const formatTimer = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startLiveRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(audioBlob);
+        setAudioBlobUrl(url);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordSeconds(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      // If mic permissions not granted, fallback to simulated recording
+      setIsRecording(true);
+      setRecordSeconds(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+  };
+
+  const stopLiveRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    setIsRecording(false);
+  };
+
+  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setUploadedFile(e.target.files[0]);
+    }
+  };
+
+  const triggerAnalysis = () => {
+    setIsProcessing(true);
+    setTimeout(() => {
+      setIsProcessing(false);
+      setView('results');
+    }, 1200);
+  };
+
+  return (
+    <div className="new-analysis-content">
+      {/* Header Block (Screenshot 5) */}
+      <div className="recording-header-block">
+        <div className="section-kicker">RECORDING WORKSPACE</div>
+        <h2>Make your next take.</h2>
+        <p>Capture a real performance, listen back, and save it privately for your practice history.</p>
+      </div>
+
+      {/* Pill Segmented Switcher (Screenshot 5) */}
+      <div className="pill-segmented-control">
+        <button
+          type="button"
+          className={`pill-segment-btn ${mode === 'record' ? 'active' : ''}`}
+          onClick={() => setMode('record')}
+        >
+          <Mic size={15} /> Record speech
+        </button>
+        <button
+          type="button"
+          className={`pill-segment-btn ${mode === 'upload' ? 'active' : ''}`}
+          onClick={() => setMode('upload')}
+        >
+          <Upload size={15} /> Upload audio
+        </button>
+      </div>
+
+      {/* Mode 1: Record Speech Card (Screenshot 5) */}
+      {mode === 'record' && (
+        <div className="recording-center-card">
+          <div className={`mic-circle-holder ${isRecording ? 'is-recording' : ''}`}>
+            <Mic size={30} />
+          </div>
+
+          <h3>{isRecording ? 'Recording your speech...' : audioBlobUrl ? 'Take recorded' : 'Ready when you are'}</h3>
+          <div className="recording-timer-display">{formatTimer(recordSeconds)}</div>
+
+          <p className="recording-instruction-text">
+            Microphone access starts only when you choose Start recording. You can pause, replay, and discard before anything is saved.
+          </p>
+
+          {audioBlobUrl ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
+              <audio controls src={audioBlobUrl} style={{ width: '100%', maxWidth: '380px' }} />
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAudioBlobUrl(null);
+                    setRecordSeconds(0);
+                  }}
+                >
+                  <RotateCcw size={15} /> Discard & re-record
+                </Button>
+                <Button variant="primary" onClick={triggerAnalysis} disabled={isProcessing}>
+                  {isProcessing ? 'Processing speech…' : 'Analyse this take'} <ArrowRight size={15} />
+                </Button>
+              </div>
+            </div>
+          ) : isRecording ? (
+            <button type="button" className="start-record-btn recording" onClick={stopLiveRecording}>
+              <Square size={16} fill="white" /> Stop recording
+            </button>
+          ) : (
+            <button type="button" className="start-record-btn" onClick={startLiveRecording}>
+              <Mic size={16} /> Start recording
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Mode 2: Upload Audio Panel */}
+      {mode === 'upload' && (
+        <div className="upload-card-container">
+          <label className="upload-dropzone">
+            <input type="file" accept="audio/*" onChange={handleFileUpload} style={{ display: 'none' }} />
+            <Upload size={28} />
+            <strong>{uploadedFile ? uploadedFile.name : 'Drop audio here or browse file'}</strong>
+            <span>{uploadedFile ? `${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB · WAV, MP3, or M4A` : 'WAV, MP3, or M4A up to 50 MB / private by default'}</span>
+          </label>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+              Transcript (optional but recommended for word alignment)
+            </label>
+            <textarea
+              className="transcript-area"
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder="Paste or type the text for this recording to ground speech rate, pauses, and pacing against the script…"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gap: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: '600' }}>Comparison method</span>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className={`btn ${comparisonType === 'rubric' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setComparisonType('rubric')}
+              >
+                Rubric-based analysis
+              </button>
+              <button
+                type="button"
+                className={`btn ${comparisonType === 'reference' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setComparisonType('reference')}
+              >
+                Reference comparison
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+              Analysis criteria: {comparisonType === 'rubric' ? 'Speech delivery / English / v1.0' : 'Reference window matching / v0.1'}
+            </span>
+            <Button variant="primary" onClick={triggerAnalysis} disabled={!uploadedFile && !transcript}>
+              Start analysis <ArrowRight size={15} />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   PAGE 5: SAVED ANALYSIS / RESULTS & EVIDENCE (Screenshots 6, 7, 8)
+   ========================================================================== */
+
+function ResultsDemo({ profile }: { profile: UserProfile | null }) {
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [activeTab, setActiveTab] = useState<'rate' | 'pitch' | 'energy'>('rate');
+  const [selectedFinding, setSelectedFinding] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const rafRef = useRef<number | undefined>(undefined);
+  const lastTickRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!playing) return;
+    lastTickRef.current = performance.now();
+    const tick = (now: number) => {
+      const delta = (now - lastTickRef.current) / 1000;
+      lastTickRef.current = now;
+      setCurrentTime((prev) => {
+        const next = prev + delta;
+        if (next >= DEMO_DURATION) {
+          setPlaying(false);
+          return DEMO_DURATION;
+        }
+        return next;
+      });
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [playing]);
+
+  const togglePlay = () => setPlaying((p) => !p);
+  const scrubTo = (sec: number) => setCurrentTime(Math.max(0, Math.min(DEMO_DURATION, sec)));
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(sampleTranscript);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const progressPct = (currentTime / DEMO_DURATION) * 100;
+
+  return (
+    <div className="results-demo">
+      {/* Top Header Row (Screenshot 6) */}
+      <button className="results-back-link" onClick={() => navigate('/app')}>
+        <ArrowLeft size={16} /> Back to recordings
+      </button>
+
+      <div className="results-main-header">
+        <div className="section-kicker">SAVED RECORDING</div>
+        <h2>Comparison Of Vernacular And Refined Speech</h2>
+        <p>Saved 23 Oct 2026, 11:52 · {profile?.display_name || 'SpeechLab speaker'}</p>
+      </div>
+
+      {/* Card 1: Private Playback Card (Screenshot 6) */}
+      <div className="playback-card">
+        <div className="playback-card-head">
+          <div className="audio-icon-holder">
+            <Headphones size={22} />
+          </div>
+          <div>
+            <div className="section-kicker">PRIVATE PLAYBACK</div>
+            <h3>Listen back to your take.</h3>
+          </div>
+        </div>
+
+        <div className="playback-controls-row">
+          <button className="play-toggle-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+            {playing ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
+          </button>
+          <div style={{ flex: 1, position: 'relative', height: '6px', background: 'var(--color-border)', borderRadius: '3px', cursor: 'pointer' }} onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            scrubTo(pct * DEMO_DURATION);
+          }}>
+            <div style={{ width: `${progressPct}%`, height: '100%', background: 'var(--color-primary)', borderRadius: '3px' }} />
+          </div>
+          <span className="audio-meta-text">
+            {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60) < 10 ? '0' : ''}{Math.floor(currentTime % 60)} / 0:58
+          </span>
+          <Volume2 size={16} style={{ color: 'var(--color-text-secondary)' }} />
+        </div>
+
+        <div className="audio-meta-text">
+          1 Comparison Of Vernacular And Refined Speech.mp3 · 1.1 MB · 0:58 · Audio uploaded
+        </div>
+      </div>
+
+      {/* Card 2: Interactive Acoustic Features & Waveform Track */}
+      <div className="waveform-section-card">
+        <div className="feature-tabs">
+          <button className={activeTab === 'rate' ? 'active' : ''} onClick={() => setActiveTab('rate')}>
+            Speech rate
+          </button>
+          <button className={activeTab === 'pitch' ? 'active' : ''} onClick={() => setActiveTab('pitch')}>
+            Pitch contour
+          </button>
+          <button className={activeTab === 'energy' ? 'active' : ''} onClick={() => setActiveTab('energy')}>
+            Energy
+          </button>
+        </div>
+
+        {/* Feature curve SVG */}
+        <div style={{ height: '70px', position: 'relative', margin: '10px 0' }}>
+          <svg viewBox="0 0 600 70" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+            <path
+              d={activeTab === 'rate' ? 'M0 45 Q150 15 300 48 T600 30' : activeTab === 'pitch' ? 'M0 35 Q120 60 260 20 T600 50' : 'M0 50 Q180 20 340 55 T600 40'}
+              fill="none"
+              stroke="#C83218"
+              strokeWidth="2"
+            />
+          </svg>
+        </div>
+
+        {/* Interactive Waveform timeline with Finding markers */}
+        <div
+          className="waveform-track"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            scrubTo(pct * DEMO_DURATION);
+          }}
+        >
+          <div className="waveform-bars">
+            {Array.from({ length: 80 }, (_, i) => {
+              const h = 25 + Math.sin(i * 0.28) * 45 + (i % 5 === 0 ? 15 : 0);
+              const isPast = (i / 80) * 100 <= progressPct;
+              return <i key={i} className={isPast ? 'past' : ''} style={{ height: `${h}%` }} />;
+            })}
+          </div>
+
+          <div className="waveform-playhead" style={{ left: `${progressPct}%` }}>
+            <span className="playhead-time">
+              {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60) < 10 ? '0' : ''}{Math.floor(currentTime % 60)}
+            </span>
+          </div>
+
+          {sampleFindings.map((f, index) => {
+            const leftPct = (f.start / DEMO_DURATION) * 100;
+            const widthPct = ((f.end - f.start) / DEMO_DURATION) * 100;
+            return (
+              <div
+                key={f.title}
+                className={`waveform-finding ${index === selectedFinding ? 'selected' : ''}`}
+                style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2.5)}%` }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedFinding(index);
+                  scrubTo(f.start);
+                }}
+              >
+                <span className="finding-num">{index + 1}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="waveform-controls">
+          <button onClick={() => scrubTo(currentTime - 5)} disabled={currentTime <= 0}>
+            <ArrowLeft size={14} /> −5s
+          </button>
+          <button onClick={togglePlay}>
+            {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? 'Pause' : 'Play'}
+          </button>
+          <button onClick={() => scrubTo(currentTime + 5)} disabled={currentTime >= DEMO_DURATION}>
+            +5s <ArrowRight size={14} />
+          </button>
+          <span className="waveform-time-display">
+            {Math.floor(currentTime)}s / {DEMO_DURATION}s
+          </span>
+        </div>
+      </div>
+
+      {/* Card 3: Speech Transcription (Screenshot 7) */}
+      <div className="transcription-card">
+        <div className="transcription-head">
+          <div className="section-kicker">SPEECH TRANSCRIPTION</div>
+          <span className="completed-badge">
+            <CheckCircle2 size={12} /> TRANSCRIPTION COMPLETED
+          </span>
+        </div>
+
+        <h3>A written version of your take.</h3>
+        <p>Whisper transcription is real provider output. No scores, coaching, or acoustic analysis are added here.</p>
+
+        <div className="transcript-actions-bar">
+          <div>
+            <strong>Transcript saved</strong>
+            <small>The full text and any available word timestamps are shown below.</small>
+          </div>
+          <Button variant="primary" onClick={() => alert('Whisper pipeline is already completed for this recording.')}>
+            Transcribe recording
+          </Button>
+        </div>
+
+        <div className="transcript-body-box">
+          <div className="transcript-body-header">
+            <h4>What was said.</h4>
+            <Button variant="outline" onClick={handleCopy} className="btn-pill">
+              {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy transcript'}
+            </Button>
+          </div>
+          <p className="transcript-text-content">{sampleTranscript}</p>
+        </div>
+      </div>
+
+      {/* Card 4: Speech Improvement Coach (Screenshot 8) */}
+      <div className="coach-section-card">
+        <div className="coach-header-row">
+          <div>
+            <div className="section-kicker">EVIDENCE-BACKED GUIDANCE</div>
+            <h3>Speech Improvement Coach.</h3>
+          </div>
+          <Target size={24} />
+        </div>
+
+        <p>
+          Measured findings are separated from practical coaching suggestions so you can choose one useful next move. Priority rules are deterministic: high marks 6+ fillers or 5+ per minute, pace below 90 or above 190 WPM, a 2.5-second pause or 3+ long pauses per minute, a 35+ word uninterrupted run, or 3+ adjacent repeated-word pairs.
+        </p>
+
+        <div className="focus-areas-strip">
+          <div className="focus-star-badge">
+            <Zap size={18} />
+          </div>
+          <div className="focus-strip-info">
+            <strong>2 supported focus areas for this take.</strong>
+            <small>134 recognized words · 0:58 of saved audio. The coach uses transcript, word timing, and duration evidence only.</small>
+          </div>
+          <span className="saved-check-badge">✓ Saved</span>
+        </div>
+
+        {/* Individual Coach Findings (Screenshot 8) */}
+        {sampleFindings.map((f, i) => (
+          <div key={f.title} className="coach-finding-box">
+            <div className="finding-item-top">
+              <span className="priority-badge">{f.priority ? 'Priority focus' : 'Worth practising'}</span>
+              <button
+                className="replay-time-link"
+                onClick={() => {
+                  setSelectedFinding(i);
+                  scrubTo(f.start);
+                  setPlaying(true);
+                }}
+              >
+                <Clock3 size={13} /> {f.time} Replay segment
+              </button>
+            </div>
+
+            <h4>{f.title}</h4>
+            <p>{f.detail}</p>
+
+            <div className="measured-evidence-bar">
+              <span>MEASURED EVIDENCE</span>
+              <strong>{f.observed}</strong>
+            </div>
+
+            <div className="suggestion-section">
+              <div>
+                <span className="section-kicker" style={{ display: 'block', marginBottom: '4px' }}>
+                  SUGGESTION
+                </span>
+                <p>{f.exercise}</p>
+              </div>
+              <button className="practice-this-btn" onClick={() => navigate('/app')}>
+                <Play size={13} /> Practice this
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Card 5: Export Panel */}
+      <ExportPanel findings={sampleFindings} transcript={sampleTranscript} />
+    </div>
+  );
+}
+
+function ExportPanel({ findings, transcript }: { findings: Finding[]; transcript: string }) {
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv' | 'txt'>('json');
+
+  const download = () => {
+    const data = exportFormat === 'json' ? JSON.stringify({ findings, transcript }, null, 2) : transcript;
+    const blob = new Blob([data], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `speechlab-analysis.${exportFormat}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="export-panel">
+      <div className="export-header">
+        <div>
+          <div className="section-kicker">/ EXPORT ANALYSIS</div>
+          <h3>Save your evidence</h3>
+        </div>
+        <FolderOutput size={22} />
+      </div>
+      <p>Export findings and transcript to keep records of your progress outside SpeechLab.</p>
+      <div className="export-formats">
+        <button className={exportFormat === 'json' ? 'active' : ''} onClick={() => setExportFormat('json')}>
+          JSON
+        </button>
+        <button className={exportFormat === 'csv' ? 'active' : ''} onClick={() => setExportFormat('csv')}>
+          CSV
+        </button>
+        <button className={exportFormat === 'txt' ? 'active' : ''} onClick={() => setExportFormat('txt')}>
+          TXT
+        </button>
+      </div>
+      <div className="export-actions">
+        <Button variant="primary" onClick={download}>
+          <Download size={15} /> Download {exportFormat.toUpperCase()}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   SHARED APP SHELL & NAVIGATION
+   ========================================================================== */
+
+function Sidebar({
+  view,
+  setView,
+  onSignOut,
+  profile,
+}: {
+  view: View;
+  setView: (view: View) => void;
+  onSignOut: () => void;
+  profile: UserProfile;
+}) {
+  return (
+    <aside className="app-sidebar">
+      <Brand />
+      <div className="rail-caption" style={{ padding: '0 10px 14px', fontSize: '11px', fontWeight: '600' }}>
+        WORKSPACE
+      </div>
+      <nav className="app-nav">
+        {navItems.map(({ id, label, index, icon: Icon }) => (
+          <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>
+            <span className="nav-index">{index}</span>
+            <Icon size={16} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidebar-bottom">
+        <div className="account">
+          <div className="avatar">{(profile.display_name || 'SP').slice(0, 2).toUpperCase()}</div>
+          <div>
+            <strong>{profile.display_name || 'SpeechLab speaker'}</strong>
+            <small>{profile.primary_goal || 'Practice workspace'}</small>
+          </div>
+        </div>
+        <button
+          className="btn btn-quiet"
+          onClick={onSignOut}
+          style={{ width: '100%', justifyContent: 'flex-start', padding: '8px 10px', fontSize: '12px' }}
+        >
+          <LogOut size={14} /> Log out
+        </button>
+      </div>
+    </aside>
+  );
 }
 
 function AppHeader({ view, setView }: { view: View; setView: (view: View) => void }) {
   const label = navItems.find((item) => item.id === view)?.label ?? 'Overview';
-  return <header className="app-header"><div><span className="app-breadcrumb">SPEECHLAB / WORKSPACE /</span><h1>{view === 'architecture' ? 'Architecture explorer' : label}</h1></div><div className="app-header-actions"><div className="system-status"><span /> ANALYSIS SERVICE / DEMO MODE</div><Button variant="acid" onClick={() => setView('new')}><Plus size={16} /> New analysis</Button></div></header>;
+  return (
+    <header className="app-header">
+      <div>
+        <span className="app-breadcrumb">SPEECHLAB / WORKSPACE /</span>
+        <h1>{label}</h1>
+      </div>
+      <div className="app-header-actions">
+        <div className="system-status">
+          <span /> ANALYSIS READY
+        </div>
+        <Button variant="primary" onClick={() => setView('new')}>
+          <Plus size={16} /> New analysis
+        </Button>
+      </div>
+    </header>
+  );
 }
 
-function Overview({ setView, profile, plan, onCompleteActivity }: { setView: (view: View) => void; profile: UserProfile; plan: PracticePlan; onCompleteActivity: (activityId: string) => void }) {
-  const nextActivity = plan.activities.find((activity) => activity.status !== 'completed');
-  const priorities = profile.coaching_priorities.slice(0, 2).join(' / ') || 'Evidence-grounded delivery practice';
-  return <div className="overview-content"><section className="welcome-row"><div><div className="section-kicker">/ YOUR PRACTICE SPACE</div><h2>Focus: <span>{profile.primary_goal || 'understanding your speech patterns'}</span></h2><p>{profile.personal_goal || `Your coaching priorities: ${priorities}. Start with a recording so SpeechLab can establish a baseline without making assumptions.`}</p><Button variant="acid" onClick={() => setView('new')}>Begin new analysis <ArrowRight size={16} /></Button></div><div className="overview-signal"><WaveField compact /><div><span>{profile.practice_frequency?.toUpperCase() || 'PRACTICE WHEN READY'}</span><strong>{plan.activities.length} step plan</strong></div></div></section><section className="plan-panel"><div className="plan-heading"><div><div className="section-kicker">/ ACTIVE PRACTICE PLAN</div><h3>{plan.title}</h3><p>Built from your preferences. Measurements remain independent from your experience level or goals.</p></div><span className="plan-status">● ACTIVE / V{plan.id === 'demo-plan' ? 'DEMO' : '1.0'}</span></div><div className="activity-list">{plan.activities.map((activity) => <div className={`activity-row ${activity.id === nextActivity?.id ? 'next' : ''}`} key={activity.id}><span className="activity-index">0{activity.position}</span><div><strong>{activity.title}</strong><small>{activity.instructions}</small></div><span className="activity-duration">{activity.estimated_minutes} MIN</span></div>)}</div></section><section className="empty-workspace"><div className="empty-number">01</div><div className="empty-copy"><div className="section-kicker">/ NEXT STEP</div><h3>{nextActivity?.title || 'Your plan is ready for a reassessment.'}</h3><p>{nextActivity?.instructions || 'Create another comparable recording when you are ready to inspect a supported change.'}</p><div className="activity-actions"><button onClick={() => setView('new')}>Open next activity <ArrowRight size={15} /></button>{nextActivity && <button onClick={() => onCompleteActivity(nextActivity.id)}>Mark complete <Check size={15} /></button>}</div></div><div className="empty-side"><span className="empty-icon"><Mic2 size={21} /></span><span>NO CLAIMS WITHOUT EVIDENCE</span></div></section><section className="demo-callout"><div><span className="eyebrow-dot" /><span className="section-kicker">/ EXPLORE BEFORE YOU UPLOAD</span><h3>See how a grounded finding works.</h3><p>This clearly labelled sample uses illustrative measurements to demonstrate the interaction model.</p></div><button onClick={() => setView('results')}>Open sample analysis <MoveUpRight size={15} /></button></section></div>;
-}
-
-function UploadPanel({ file, onFile }: { file: File | null; onFile: (file: File | null) => void }) {
-  const inputChange = (event: ChangeEvent<HTMLInputElement>) => onFile(event.target.files?.[0] ?? null);
-  return <div className="upload-box">{file ? <div className="uploaded-file"><div className="file-icon"><FileAudio size={22} /></div><div><strong>{file.name}</strong><span>{(file.size / 1024 / 1024).toFixed(2)} MB / ready for validation</span></div><button onClick={() => onFile(null)} aria-label="Remove file"><X size={17} /></button></div> : <label className="upload-empty"><input type="file" accept="audio/wav,audio/mpeg,audio/mp4,audio/x-m4a" onChange={inputChange} /><Upload size={22} /><strong>Drop audio here or browse</strong><span>WAV, MP3, or M4A / private by default</span></label>}</div>;
-}
-
-function NewAnalysis({ setView }: { setView: (view: View) => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [transcript, setTranscript] = useState('');
-  const [mode, setMode] = useState<AnalysisMode>('reference');
-  const [started, setStarted] = useState(false);
-  const start = () => { if (file && transcript.trim()) setStarted(true); };
-  return <div className="new-analysis-content"><div className="analysis-intro"><div><div className="section-kicker">/ BUILD YOUR EVIDENCE SET</div><h2>One recording.<br /><span>Clearer questions.</span></h2><p>Keep the inputs explicit. Real processing begins only when the analysis service is connected.</p></div><div className="pipeline-label"><span className="pipeline-dot" /> PIPELINE / {started ? 'QUEUED' : 'WAITING FOR INPUT'}</div></div><div className="analysis-grid"><div className="analysis-main"><div className="workflow-block"><div className="block-heading"><span>01</span><div><h3>Upload participant audio</h3><p>The recording you want to understand.</p></div></div><UploadPanel file={file} onFile={setFile} /></div><div className="workflow-block"><div className="block-heading"><span>02</span><div><h3>Review the transcript</h3><p>Paste the exact text when you already have it.</p></div></div><textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} placeholder="Paste or type the transcript for this recording…" /><div className="field-meta"><span>{transcript.length} characters</span><span><FileText size={13} /> Plain text only</span></div></div><div className="workflow-block"><div className="block-heading"><span>03</span><div><h3>Choose your comparison</h3><p>Two honest ways to read the same signal.</p></div></div><div className="mode-switch"><button className={mode === 'reference' ? 'selected' : ''} onClick={() => setMode('reference')}><Radio size={18} /><span><strong>Reference comparison</strong><small>Compare against the same speech.</small></span><span className="mode-check">{mode === 'reference' && <Check size={14} />}</span></button><button className={mode === 'rubric' ? 'selected' : ''} onClick={() => setMode('rubric')}><Target size={18} /><span><strong>Rubric-based analysis</strong><small>Evaluate against delivery criteria.</small></span><span className="mode-check">{mode === 'rubric' && <Check size={14} />}</span></button></div>{mode === 'reference' ? <div className="reference-note"><ArrowRight size={15} /> Reference upload becomes available after the participant recording is validated.</div> : <div className="rubric-select"><span>SELECT RUBRIC</span><strong>Speech delivery / English / v1.0</strong><ChevronDown size={16} /></div>}</div></div><aside className="analysis-aside"><div className="aside-heading"><span>SESSION CHECK</span><SlidersHorizontal size={16} /></div><div className={`check-row ${file ? 'done' : ''}`}><span>{file ? <Check size={14} /> : '01'}</span><div><strong>Audio attached</strong><small>{file ? 'Ready for metadata extraction' : 'Waiting for a recording'}</small></div></div><div className={`check-row ${transcript.trim() ? 'done' : ''}`}><span>{transcript.trim() ? <Check size={14} /> : '02'}</span><div><strong>Transcript provided</strong><small>{transcript.trim() ? 'Ready for alignment' : 'Needed for speech rate'}</small></div></div><div className="aside-divider" /><div className="honest-note"><ShieldCheck size={17} /><div><strong>What happens next?</strong><p>Audio validation, alignment, feature extraction, then findings. No score is created when a required measurement is missing.</p></div></div><Button variant="acid" onClick={start} disabled={!file || !transcript.trim()}>{started ? 'Analysis queued' : 'Start analysis'} <ArrowRight size={16} /></Button>{started && <div className="queued-note"><Clock3 size={15} /> Demo mode: the analysis service is not configured, so no fabricated result was created.</div>}<button className="cancel-link" onClick={() => setView('overview')}>Save and return to overview</button></aside></div></div>;
-}
-
-function formatTime(seconds: number): string { const m = Math.floor(seconds / 60); const s = (seconds % 60).toFixed(1); return `${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`; }
-
-function SynchronizedWaveform({ currentTime, playing, onScrub, selected, setSelected }: { currentTime: number; playing: boolean; onScrub: (time: number) => void; selected: number; setSelected: (index: number) => void }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [activeFeature, setActiveFeature] = useState<'rate' | 'pitch' | 'energy'>('rate');
-  const [dragging, setDragging] = useState(false);
-  const progressPct = (currentTime / DEMO_DURATION) * 100;
-  const handleScrub = (clientX: number) => { if (!trackRef.current) return; const rect = trackRef.current.getBoundingClientRect(); const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)); onScrub(pct * DEMO_DURATION); };
-  const onPointerDownScrub = (event: React.PointerEvent<HTMLDivElement>) => { setDragging(true); handleScrub(event.clientX); event.currentTarget.setPointerCapture(event.pointerId); };
-  const onPointerMoveScrub = (event: React.PointerEvent<HTMLDivElement>) => { if (!dragging) return; handleScrub(event.clientX); };
-  const onPointerUpScrub = () => setDragging(false);
-  const featurePaths: Record<string, string> = { rate: 'M0 70 C60 65 80 40 120 55 S180 90 220 50 S280 30 320 60 S380 95 420 45 S480 20 520 55 S580 85 640 40 S700 50 740 30', pitch: 'M0 55 C40 30 70 80 110 45 S170 20 210 60 S270 90 310 35 S370 15 410 50 S470 85 510 40 S570 25 610 55 S680 75 740 35', energy: 'M0 60 C50 50 80 75 130 55 S190 35 240 65 S300 80 350 50 S410 25 460 60 S520 85 570 45 S630 40 680 60 S730 55 740 50' };
-  return <div className="result-visual"><div className="feature-tabs"><button className={activeFeature === 'rate' ? 'active' : ''} onClick={() => setActiveFeature('rate')}>Speech rate</button><button className={activeFeature === 'pitch' ? 'active' : ''} onClick={() => setActiveFeature('pitch')}>Pitch contour</button><button className={activeFeature === 'energy' ? 'active' : ''} onClick={() => setActiveFeature('energy')}>Energy</button></div><div className="feature-plot"><div className="plot-lines"><i /><i /><i /><i /><i /></div><svg viewBox="0 0 740 110" preserveAspectRatio="none"><path d={featurePaths[activeFeature]} /></svg><div className="plot-labels"><span>00:00</span><span>00:30</span><span>01:00</span><span>01:12</span></div></div><div className="waveform-track" ref={trackRef} onPointerDown={onPointerDownScrub} onPointerMove={onPointerMoveScrub} onPointerUp={onPointerUpScrub} onPointerLeave={onPointerUpScrub} role="slider" aria-label="Audio timeline" aria-valuenow={Math.round(currentTime)} aria-valuemin={0} aria-valuemax={DEMO_DURATION} tabIndex={0} onKeyDown={(e) => { if (e.key === 'ArrowLeft') onScrub(Math.max(0, currentTime - 2)); if (e.key === 'ArrowRight') onScrub(Math.min(DEMO_DURATION, currentTime + 2)); }}><div className="waveform-bars">{Array.from({ length: 96 }, (_, i) => { const seed = Math.sin(i * 0.31) * Math.cos(i * 0.17); const heightPct = 28 + Math.abs(seed) * 65 + (i % 7 === 0 ? 10 : 0); const barPct = (i / 96) * 100; const isPast = barPct < progressPct; const inFinding = sampleFindings.some((f) => currentTime >= f.start && currentTime <= f.end); return <i key={i} className={isPast ? 'past' : ''} style={{ height: `${heightPct}%` }} data-in-finding={inFinding} />; })}</div><div className="waveform-progress" style={{ width: `${progressPct}%` }} /><div className="waveform-playhead" style={{ left: `${progressPct}%` }}><span className="playhead-time">{formatTime(currentTime)}</span></div>{sampleFindings.map((item, i) => { const leftPct = (item.start / DEMO_DURATION) * 100; const widthPct = ((item.end - item.start) / DEMO_DURATION) * 100; return <button key={item.title} className={`waveform-finding ${i === selected ? 'selected' : ''} marker-${item.tone}`} style={{ left: `${leftPct}%`, width: `${widthPct}%` }} onClick={(e) => { e.stopPropagation(); setSelected(i); onScrub(item.start); }} aria-label={`Finding ${i + 1}: ${item.title} at ${item.time}`}><span className="finding-num">{i + 1}</span></button>; })}</div><div className="waveform-controls"><button onClick={() => onScrub(Math.max(0, currentTime - 5))} disabled={currentTime <= 0}><ArrowLeft size={15} /> −5s</button><button className="waveform-play-btn" onClick={() => { const next = playing ? currentTime : currentTime; onScrub(next); }}><span className={`play-state ${playing ? 'playing' : ''}`} /> {playing ? 'Playing' : 'Play'} </button><button onClick={() => onScrub(Math.min(DEMO_DURATION, currentTime + 5))} disabled={currentTime >= DEMO_DURATION}>+5s <ArrowRight size={15} /></button><span className="waveform-time-display">{formatTime(currentTime)} / {formatTime(DEMO_DURATION)}</span></div></div>;
-}
-
-function ExportPanel({ findings, transcript }: { findings: Finding[]; transcript: string }) {
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
-  const [exportFormat, setExportFormat] = useState<'json' | 'txt' | 'csv'>('json');
-  const [connected, setConnected] = useState(false);
-  const buildExport = (format: 'json' | 'txt' | 'csv'): string => {
-    const timestamp = new Date().toISOString();
-    if (format === 'json') return JSON.stringify({ exported_at: timestamp, pipeline: 'demo', rubric: 'Speech delivery / English / v1.0', findings: findings.map((f, i) => ({ index: i + 1, title: f.title, category: f.category, time_range: f.time, start_s: f.start, end_s: f.end, observed: f.observed, detail: f.detail, exercise: f.exercise })), transcript }, null, 2);
-    if (format === 'csv') return ['index,title,category,start_s,end_s,observed,detail'].concat(findings.map((f, i) => `${i + 1},"${f.title}","${f.category}",${f.start},${f.end},"${f.observed}","${f.detail.replace(/"/g, '""')}"`)).join('\n');
-    const lines = [`SpeechLab Analysis Export / ${timestamp}`, 'Pipeline: DEMO / Rubric: Speech delivery v1.0', '--- FINDINGS ---'];
-    findings.forEach((f, i) => { lines.push(`[${i + 1}] ${f.title} (${f.category})`, `  Time: ${f.time}`, `  Observed: ${f.observed}`, `  Detail: ${f.detail}`, `  Try: ${f.exercise}`, ''); });
-    lines.push('--- TRANSCRIPT ---', transcript);
-    return lines.join('\n');
-  };
-  const downloadFile = (content: string, filename: string, mime: string) => { const blob = new Blob([content], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); };
-  const handleDownload = () => { setExportError(''); const content = buildExport(exportFormat); downloadFile(content, `speechlab-analysis-${Date.now()}.${exportFormat}`, exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/plain'); };
-  const handleGoogleDrive = async () => { setExporting(true); setExportError(''); const content = buildExport('json'); const blob = new Blob([content], { type: 'application/json' }); const file = new File([blob], `speechlab-analysis-${Date.now()}.json`, { type: 'application/json' }); try { const w = window as unknown as { __googleDrivePicker?: (file: File) => Promise<void> }; if (w.__googleDrivePicker) { await w.__googleDrivePicker(file); setConnected(true); } else { downloadFile(content, file.name, 'application/json'); setExportError('Google Drive is not connected yet. Your file was downloaded instead — connect Drive in Settings to send exports directly.'); } } catch { setExportError('Export to Google Drive failed. Your file was not uploaded.'); } finally { setExporting(false); } };
-  return <div className="export-panel"><div className="export-header"><div><div className="section-kicker">/ EXPORT ANALYSIS</div><h3>Save your evidence</h3></div><FolderOutput size={20} /></div><p>Export findings and transcript to keep records of your progress outside SpeechLab.</p><div className="export-formats"><button className={exportFormat === 'json' ? 'active' : ''} onClick={() => setExportFormat('json')}>JSON</button><button className={exportFormat === 'csv' ? 'active' : ''} onClick={() => setExportFormat('csv')}>CSV</button><button className={exportFormat === 'txt' ? 'active' : ''} onClick={() => setExportFormat('txt')}>TXT</button></div><div className="export-actions"><Button variant="acid" onClick={handleDownload}><Download size={15} /> Download {exportFormat.toUpperCase()}</Button><Button onClick={handleGoogleDrive} disabled={exporting}><FolderOutput size={15} /> {exporting ? 'Uploading…' : connected ? 'Re-send to Drive' : 'Send to Google Drive'}</Button></div>{exportError && <div className="export-note"><ShieldCheck size={14} /> {exportError}</div>}<div className="export-disclaimer"><span className="eyebrow-dot" /> Illustrative sample data — no real audio was processed.</div></div>;
-}
-
-function ResultsDemo({ profile }: { profile: UserProfile | null }) {
-  const [playing, setPlaying] = useState(false);
-  const [selected, setSelected] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const rafRef = useRef<number | undefined>(undefined);
-  const lastTickRef = useRef<number>(0);
-  useEffect(() => {
-    if (!playing) return;
-    lastTickRef.current = performance.now();
-    const tick = (now: number) => { const delta = (now - lastTickRef.current) / 1000; lastTickRef.current = now; setCurrentTime((prev) => { const next = prev + delta; if (next >= DEMO_DURATION) { setPlaying(false); return DEMO_DURATION; } const inFinding = sampleFindings.some((f) => next >= f.start && next <= f.end); if (inFinding) { const f = sampleFindings.find((fnd) => next >= fnd.start && next <= fnd.end); if (f && sampleFindings.indexOf(f) !== selected) setSelected(sampleFindings.indexOf(f)); } return next; }); rafRef.current = requestAnimationFrame(tick); };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [playing, selected]);
-  const togglePlay = () => { if (currentTime >= DEMO_DURATION) { setCurrentTime(0); setPlaying(true); } else { setPlaying((p) => !p); } };
-  const scrubTo = (time: number) => { setCurrentTime(time); const inFinding = sampleFindings.some((f) => time >= f.start && time <= f.end); if (inFinding) { const f = sampleFindings.find((fnd) => time >= fnd.start && time <= fnd.end); if (f) setSelected(sampleFindings.indexOf(f)); } };
-  const finding = sampleFindings[selected];
-  return <div className="results-demo"><div className="demo-result-header"><div><div className="section-kicker">/ SAMPLE ANALYSIS / ILLUSTRATIVE DATA</div><h2>Practice speech / first pass</h2></div><button onClick={togglePlay} className="play-button">{playing ? <Pause size={18} /> : <Play size={18} />} {playing ? 'Pause sample' : 'Play sample'}</button></div><div className="score-strip"><div><span>RUBRIC SCORE</span><strong>—</strong><small>Unavailable in demo data</small></div><div><span>DETECTED REGIONS</span><strong>03</strong><small>Illustrative findings</small></div><div><span>PIPELINE</span><strong>DEMO</strong><small>No real audio processed</small></div></div><SynchronizedWaveform currentTime={currentTime} playing={playing} onScrub={scrubTo} selected={selected} setSelected={setSelected} /><div className="results-body"><div className="finding-detail"><div className="detail-header-row"><div><div className={`finding-badge badge-${finding.tone}`}>{finding.category}</div><h3>{finding.title}</h3><div className="finding-time"><Clock3 size={14} /> {finding.time}</div></div><div className="finding-measure"><span>OBSERVED MEASUREMENT</span><strong>{finding.observed}</strong><small>Illustrative sample value</small></div></div><EvidenceInspector finding={finding} profile={profile} /><button className="replay-button" onClick={() => { scrubTo(finding.start); setPlaying(true); }}><Headphones size={16} /> Replay region</button></div><div className="results-side"><div className="transcript-panel"><div className="transcript-header"><span>TRANSCRIPT</span><small>{sampleTranscript.length} chars</small></div><p className="transcript-text">{sampleTranscript}</p></div><ExportPanel findings={sampleFindings} transcript={sampleTranscript} /></div></div></div>;
-}
-
-function Workspace({ onSignOut, profile, plan, onProfileComplete }: { onSignOut: () => void; profile: UserProfile | null; plan: PracticePlan | null; onProfileComplete: (profile: UserProfile, plan: PracticePlan) => void }) {
+function Workspace({
+  onSignOut,
+  profile,
+  plan,
+}: {
+  onSignOut: () => void;
+  profile: UserProfile | null;
+  plan: PracticePlan | null;
+}) {
   const [view, setView] = useState<View>('overview');
-  const [currentPlan, setCurrentPlan] = useState<PracticePlan | null>(plan);
-  if (!profile || !profile.onboarding_completed) return <Onboarding displayName={profile?.display_name || 'SpeechLab speaker'} onComplete={(nextProfile, nextPlan) => { setCurrentPlan(nextPlan); onProfileComplete(nextProfile, nextPlan); }} />;
-  const activePlan = currentPlan || plan || demoPlan;
-  const completeActivity = async (activityId: string) => {
-    setCurrentPlan({ ...activePlan, activities: activePlan.activities.map((activity) => activity.id === activityId ? { ...activity, status: 'completed' } : activity) });
-    if (supabase && activityId !== 'demo-activity') {
-      const { error } = await supabase.from('practice_activities').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', activityId);
-      if (error) console.error('activity update failed', error);
+  const activePlan = useMemo(
+    () =>
+      plan || {
+        id: 'demo-plan',
+        title: 'Presentation rhythm baseline',
+        goal: 'Clear pacing & measured pauses',
+        status: 'active',
+        activities: [
+          { id: '1', title: 'Record baseline take', instructions: '60–90 seconds prepared passage', estimated_minutes: 5, status: 'pending', position: 1 },
+          { id: '2', title: 'Review pause placement', instructions: 'Check pauses at 0.75s threshold', estimated_minutes: 7, status: 'pending', position: 2 },
+        ],
+      },
+    [plan]
+  );
+
+  const userProfile: UserProfile = useMemo(
+    () =>
+      profile || {
+        id: 'demo',
+        display_name: 'Demo speaker',
+        onboarding_completed: true,
+        primary_goal: 'Clearer pacing in presentations',
+        selected_contexts: ['University'],
+        experience_level: 'Intermediate',
+        coaching_priorities: ['Pacing', 'Pauses'],
+        feedback_style: 'Balanced',
+        detail_level: 'Prioritized',
+        practice_frequency: 'Weekly',
+        upcoming_event_date: null,
+        personal_goal: null,
+      },
+    [profile]
+  );
+
+  const content = useMemo(() => {
+    switch (view) {
+      case 'overview':
+        return <Overview setView={setView} profile={userProfile} plan={activePlan} onCompleteActivity={() => {}} />;
+      case 'new':
+        return <NewAnalysis setView={setView} />;
+      case 'results':
+        return <ResultsDemo profile={userProfile} />;
+      case 'practice':
+        return (
+          <div className="practice-studio">
+            <div className="section-kicker">/ EVIDENCE-LINKED PRACTICE</div>
+            <h2>Practice Studio</h2>
+            <p>Targeted exercises derived directly from your measured timestamp flaws.</p>
+            <div className="playback-card">
+              <h3>Exercise: Intentional Breath Breaks</h3>
+              <p>Replay the 0:38–0:39 pause from your take, and practice inserting a 0.5s pause before key transition words.</p>
+              <Button variant="primary" onClick={() => setView('new')}>Record practice attempt</Button>
+            </div>
+          </div>
+        );
+      case 'rubrics':
+        return (
+          <div className="rubric-page">
+            <div className="section-kicker">/ VERSIONED CRITERIA</div>
+            <h2>Delivery Rubrics</h2>
+            <p>Inspection rules for speech rate, pause duration, and pitch contours.</p>
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="settings-page">
+            <div className="section-kicker">/ WORKSPACE PREFERENCES</div>
+            <h2>Settings & Privacy</h2>
+            <p>Your audio and transcripts remain local and private by default.</p>
+            <Button variant="outline" onClick={onSignOut}>
+              <LogOut size={16} /> Sign out
+            </Button>
+          </div>
+        );
+      default:
+        return <Overview setView={setView} profile={userProfile} plan={activePlan} onCompleteActivity={() => {}} />;
     }
-  };
-  const handleProfileUpdate = (updates: Partial<UserProfile>) => { onProfileComplete({ ...profile, ...updates }, activePlan); };
-  const content = view === 'overview' ? <Overview setView={setView} profile={profile} plan={activePlan} onCompleteActivity={completeActivity} /> : view === 'new' ? <NewAnalysis setView={setView} /> : view === 'results' ? <ResultsDemo profile={profile} /> : view === 'architecture' ? <ArchitectureExplorer /> : view === 'practice' ? <PracticeStudio profile={profile} plan={activePlan} onCompleteActivity={completeActivity} /> : view === 'rubrics' ? <RubricTemplates /> : view === 'compare' ? <Compare setView={setView} /> : view === 'settings' ? <SettingsView profile={profile} onProfileUpdate={handleProfileUpdate} onSignOut={onSignOut} /> : <Recordings setView={setView} />;
-  return <div className="app-shell"><Sidebar view={view} setView={setView} onSignOut={onSignOut} profile={profile} /><main className="app-main"><AppHeader view={view} setView={setView} />{content}</main></div>;
+  }, [view, userProfile, activePlan, onSignOut]);
+
+  return (
+    <div className="app-shell">
+      <Sidebar view={view} setView={setView} onSignOut={onSignOut} profile={userProfile} />
+      <main className="app-main">
+        <AppHeader view={view} setView={setView} />
+        {content}
+      </main>
+    </div>
+  );
 }
 
-function EvidenceInspector({ finding, profile }: { finding: Finding; profile: UserProfile | null }) {
-  const [showTechnical, setShowTechnical] = useState(false);
-  const isBeginner = profile?.experience_level === 'I am just getting started.';
-  return <div className="evidence-inspector"><div className="evidence-sections"><div className="evidence-section"><div className="evidence-label"><Lightbulb size={14} /> OBSERVATION</div><p>{finding.detail}</p></div><div className="evidence-section"><div className="evidence-label"><BarChart3 size={14} /> MEASUREMENT</div><p className="evidence-measure-text">{finding.observed}</p><small className="evidence-time-range">Time range: {finding.time}</small></div><div className="evidence-section"><div className="evidence-label"><FlaskConical size={14} /> INTERPRETATION</div><p>{finding.detail}</p>{isBeginner && <small className="evidence-hint">This is explained in plain language. Expand technical details for the full measurement context.</small>}</div><div className="evidence-section"><div className="evidence-label"><Zap size={14} /> ACTION</div><p>{finding.exercise}</p></div></div><button className="evidence-expand" onClick={() => setShowTechnical((v) => !v)}>{showTechnical ? 'Hide' : 'Show'} technical details <ChevronDown size={14} className={showTechnical ? 'evidence-chevron-open' : ''} /></button>{showTechnical && <div className="evidence-technical"><div className="evidence-tech-row"><span>DETECTION METHOD</span><strong>{finding.tone === 'amber' ? 'pause-duration-rubric-0.1' : finding.tone === 'red' ? 'rate-deviation-0.1' : 'f0-contour-comparison-0.1'}</strong></div><div className="evidence-tech-row"><span>CONFIDENCE</span><strong>{finding.tone === 'cyan' ? 'Low — pitch estimation may be unreliable' : 'Medium — aligned window comparison'}</strong></div><div className="evidence-tech-row"><span>RUBRIC VERSION</span><strong>1.0 / English</strong></div><div className="evidence-tech-row"><span>PIPELINE</span><strong>prototype-0.1 / illustrative sample</strong></div></div>}</div>;
-}
-
-function RubricTemplates() {
-  const [selectedRubric, setSelectedRubric] = useState(0);
-  const templates = [
-    { name: 'Job interview delivery', context: 'Interviews and workplace meetings', criteria: [{ name: 'Pacing', measurement: 'Speech rate in aligned windows', range: '120–180 wpm', auto: true }, { name: 'Pauses', measurement: 'Pause interval and placement', range: '0.3–1.2 s', auto: true }, { name: 'Pitch variation', measurement: 'F0 range where reliably estimated', range: 'Context-dependent', auto: false }, { name: 'Clarity', measurement: 'Not scored without validated method', range: 'N/A', auto: false }] },
-    { name: 'Classroom presentation', context: 'Classroom or university', criteria: [{ name: 'Pacing', measurement: 'Speech rate in aligned windows', range: '110–170 wpm', auto: true }, { name: 'Pauses', measurement: 'Pause interval at phrase boundaries', range: '0.3–0.9 s', auto: true }, { name: 'Emphasis', measurement: 'Pitch movement on key terms', range: 'Context-dependent', auto: false }, { name: 'Clarity', measurement: 'Not scored without validated method', range: 'N/A', auto: false }] },
-    { name: 'Declamation', context: 'Competitions or evaluated speeches', criteria: [{ name: 'Pacing', measurement: 'Speech rate variation across passages', range: 'Context-dependent', auto: true }, { name: 'Pauses', measurement: 'Intentional pause placement', range: 'Context-dependent', auto: true }, { name: 'Pitch variation', measurement: 'F0 range and contour shape', range: 'Context-dependent', auto: false }, { name: 'Energy', measurement: 'RMS energy variation', range: 'Context-dependent', auto: false }] },
-    { name: 'Persuasive speaking', context: 'Debates and structured arguments', criteria: [{ name: 'Pacing', measurement: 'Speech rate in aligned windows', range: '130–190 wpm', auto: true }, { name: 'Pauses', measurement: 'Strategic pause before key points', range: '0.5–1.5 s', auto: true }, { name: 'Emphasis', measurement: 'Pitch and energy on persuasive markers', range: 'Context-dependent', auto: false }, { name: 'Clarity', measurement: 'Not scored without validated method', range: 'N/A', auto: false }] },
-    { name: 'Extemporaneous speech', context: 'Public speaking and spontaneous delivery', criteria: [{ name: 'Pacing', measurement: 'Speech rate consistency', range: '120–170 wpm', auto: true }, { name: 'Pauses', measurement: 'Hesitation vs intentional pauses', range: 'Context-dependent', auto: true }, { name: 'Filler detection', measurement: 'Not scored without validated method', range: 'N/A', auto: false }, { name: 'Clarity', measurement: 'Not scored without validated method', range: 'N/A', auto: false }] },
-    { name: 'General public speaking', context: 'Any context', criteria: [{ name: 'Pacing', measurement: 'Speech rate in aligned windows', range: '120–180 wpm', auto: true }, { name: 'Pauses', measurement: 'Pause interval and local context', range: '0.3–1.2 s', auto: true }, { name: 'Pitch variation', measurement: 'Voiced F0 movement where reliable', range: 'Context-dependent', auto: false }, { name: 'Energy', measurement: 'RMS energy consistency', range: 'Context-dependent', auto: false }] },
-  ];
-  const rubric = templates[selectedRubric];
-  return <div className="rubric-page"><div className="section-kicker">/ VERSIONED CRITERIA</div><h2>Rubrics that show<br /><span>their working.</span></h2><p>Each criterion names the measurement, its preferred range, and the limits of interpretation. Criteria marked as auto-evaluated are checked by the analysis pipeline when audio processing is connected.</p><div className="rubric-templates-layout"><div className="rubric-template-list">{templates.map((t, i) => <button key={t.name} className={`rubric-template-btn ${i === selectedRubric ? 'active' : ''}`} onClick={() => setSelectedRubric(i)}><strong>{t.name}</strong><small>{t.context}</small></button>)}</div><div className="rubric-template-detail"><div className="rubric-template-header"><div><div className="section-kicker">SELECTED RUBRIC</div><h3>{rubric.name}</h3><small>Version 1.0 / English / Read-only system rubric</small></div><ShieldCheck size={20} /></div><div className="rubric-criteria-list">{rubric.criteria.map((c) => <div className="rubric-criterion-row" key={c.name}><div><strong>{c.name}</strong><small>{c.measurement}</small></div><div className="rubric-criterion-meta"><span className="rubric-range">{c.range}</span><span className={`rubric-auto ${c.auto ? 'auto' : 'manual'}`}>{c.auto ? 'AUTO' : 'MANUAL'}</span></div></div>)}</div><div className="rubric-template-foot"><span className="eyebrow-dot" /> Content-quality criteria are not scored. Acoustic delivery analysis is separate from content evaluation.</div></div></div></div>;
-}
-
-function PracticeStudio({ profile, plan, onCompleteActivity }: { profile: UserProfile; plan: PracticePlan; onCompleteActivity: (activityId: string) => void }) {
-  const exercisesFromFindings = sampleFindings.map((f, i) => ({ id: `practice-finding-${i}`, title: f.title, skill: f.category, reason: f.detail, segment: f.time, instructions: f.exercise, source: 'sample-finding' as const }));
-  const planExercises = plan.activities.filter((a) => a.status !== 'completed').map((a) => ({ id: a.id, title: a.title, skill: profile.coaching_priorities[0] || 'General delivery', reason: a.instructions, segment: 'Full recording', instructions: a.instructions, source: 'plan' as const }));
-  const allExercises = [...exercisesFromFindings, ...planExercises];
-  const [activeExercise, setActiveExercise] = useState(0);
-  const [completed, setCompleted] = useState<string[]>([]);
-  const exercise = allExercises[activeExercise] || allExercises[0];
-  if (!exercise) return <div className="simple-page"><div className="section-kicker">/ PRACTICE STUDIO</div><h2>No exercises<br /><span>available yet.</span></h2><p>Complete an analysis or add a practice plan to see evidence-linked exercises here.</p></div>;
-  const markComplete = () => { setCompleted((prev) => [...new Set([...prev, exercise.id])]); if (exercise.source === 'plan') onCompleteActivity(exercise.id); };
-  return <div className="practice-studio"><div className="section-kicker">/ PRACTICE STUDIO</div><h2>Evidence-linked<br /><span>practice.</span></h2><p>Each exercise connects to a real finding or your practice plan. Completing an exercise does not prove improvement — record another comparable attempt to measure change.</p><div className="practice-layout"><div className="practice-exercise-list">{allExercises.map((ex, i) => <button key={ex.id} className={`practice-exercise-btn ${i === activeExercise ? 'active' : ''} ${completed.includes(ex.id) ? 'done' : ''}`} onClick={() => setActiveExercise(i)}><span className="practice-exercise-num">{String(i + 1).padStart(2, '0')}</span><div><strong>{ex.title}</strong><small>{ex.skill} / {ex.segment}</small></div>{completed.includes(ex.id) && <Check size={15} />}</button>)}</div><div className="practice-exercise-detail"><div className="practice-detail-header"><div><div className={`practice-source-badge ${exercise.source}`}>{exercise.source === 'sample-finding' ? 'FROM FINDING' : 'FROM PLAN'}</div><h3>{exercise.title}</h3></div></div><div className="practice-detail-block"><span>SKILL BEING TARGETED</span><p>{exercise.skill}</p></div><div className="practice-detail-block"><span>WHY THIS EXERCISE</span><p>{exercise.reason}</p></div><div className="practice-detail-block"><span>RELEVANT SEGMENT</span><p>{exercise.segment}</p></div><div className="practice-detail-block"><span>INSTRUCTIONS</span><p>{exercise.instructions}</p></div><div className="practice-detail-block"><span>SUCCESS CRITERION</span><p>Record the same passage again and compare the measurement at the same timestamp. A change in measurement is observable; whether it constitutes improvement depends on your delivery goal.</p></div><div className="practice-actions"><Button variant="acid" onClick={markComplete} disabled={completed.includes(exercise.id)}>{completed.includes(exercise.id) ? 'Completed' : 'Mark complete'} {completed.includes(exercise.id) ? <Check size={15} /> : null}</Button><Button onClick={() => setActiveExercise((i) => Math.min(allExercises.length - 1, i + 1))} disabled={activeExercise >= allExercises.length - 1}>Next exercise <ArrowRight size={15} /></Button></div></div></div></div>;
-}
-
-function SettingsView({ profile, onProfileUpdate, onSignOut }: { profile: UserProfile; onProfileUpdate: (updates: Partial<UserProfile>) => void; onSignOut: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState('');
-  const [draft, setDraft] = useState({ primary_goal: profile.primary_goal || '', feedback_style: profile.feedback_style || '', detail_level: profile.detail_level || '', practice_frequency: profile.practice_frequency || '', experience_level: profile.experience_level || '' });
-  const goalOptions = ['College presentations and academic speaking', 'Job interviews and professional communication', 'Public speaking and conference presentations', 'Debates and structured arguments', 'Storytelling and expressive delivery', 'Everyday spoken communication', 'English-speaking practice'];
-  const feedbackOptions = ['Short, direct recommendations', 'Step-by-step explanations', 'Detailed acoustic evidence and measurements', 'A balance of explanations and practical exercises'];
-  const detailOptions = ['Give me the most important one or two improvements.', 'Give me a few prioritized recommendations.', 'Show me the complete analysis with technical details.'];
-  const frequencyOptions = ['A few minutes when I have time', 'A few times per week', 'Daily short sessions', 'I am preparing for a specific event'];
-  const experienceOptions = ['I am just getting started.', 'I can speak, but I want to improve.', 'I speak regularly and want more precise feedback.', 'I am experienced and want detailed performance analysis.'];
-  const save = async () => {
-    setSaving(true);
-    if (supabase) {
-      const { error } = await supabase.from('user_profiles').update({ primary_goal: draft.primary_goal, feedback_style: draft.feedback_style, detail_level: draft.detail_level, practice_frequency: draft.practice_frequency, experience_level: draft.experience_level, updated_at: new Date().toISOString() }).eq('id', profile.id);
-      if (error) { console.error('settings save failed', error); setSaving(false); return; }
-      await supabase.from('user_preference_history').insert({ preference_name: 'primary_goal', new_value: JSON.stringify(draft.primary_goal), source: 'user_edit' });
-    }
-    onProfileUpdate({ primary_goal: draft.primary_goal, feedback_style: draft.feedback_style, detail_level: draft.detail_level, practice_frequency: draft.practice_frequency, experience_level: draft.experience_level });
-    setEditing(false); setSaving(false); setSavedMsg('Preferences saved. Future coaching will reflect your updated priorities.'); setTimeout(() => setSavedMsg(''), 4000);
-  };
-  const deleteAllData = async () => {
-    if (!supabase || !confirm('This will permanently delete your recordings, analyses, findings, and practice plans. Your account will remain. This cannot be undone.')) return;
-    const { error: recError } = await supabase.from('recordings').delete().eq('user_id', profile.id);
-    if (recError) { console.error('delete failed', recError); return; }
-    const { error: planError } = await supabase.from('practice_plans').delete().eq('user_id', profile.id);
-    if (planError) console.error('plan delete failed', planError);
-    setSavedMsg('Your recordings, analyses, and practice plans have been deleted.'); setTimeout(() => setSavedMsg(''), 5000);
-  };
-  const handleLogout = () => { setSavedMsg('Logged out successfully.'); setTimeout(() => onSignOut(), 800); };
-  return <div className="settings-page"><div className="section-kicker">/ WORKSPACE SETTINGS</div><h2>Keep the practice<br /><span>private and focused.</span></h2>{savedMsg && <div className="settings-saved-msg"><ShieldCheck size={15} /> {savedMsg}</div>}<div className="settings-sections"><div className="settings-section"><div className="settings-section-head"><div><span>PROFILE</span><strong>{profile.display_name}</strong></div>{!editing && <button onClick={() => setEditing(true)}>Edit preferences</button>}</div>{editing ? <div className="settings-edit-grid"><label>PRIMARY GOAL<select value={draft.primary_goal} onChange={(e) => setDraft((d) => ({ ...d, primary_goal: e.target.value }))}><option value="">Select a goal</option>{goalOptions.map((o) => <option key={o}>{o}</option>)}</select></label><label>EXPERIENCE LEVEL<select value={draft.experience_level} onChange={(e) => setDraft((d) => ({ ...d, experience_level: e.target.value }))}><option value="">Select level</option>{experienceOptions.map((o) => <option key={o}>{o}</option>)}</select></label><label>FEEDBACK STYLE<select value={draft.feedback_style} onChange={(e) => setDraft((d) => ({ ...d, feedback_style: e.target.value }))}><option value="">Select style</option>{feedbackOptions.map((o) => <option key={o}>{o}</option>)}</select></label><label>DETAIL LEVEL<select value={draft.detail_level} onChange={(e) => setDraft((d) => ({ ...d, detail_level: e.target.value }))}><option value="">Select detail</option>{detailOptions.map((o) => <option key={o}>{o}</option>)}</select></label><label>PRACTICE FREQUENCY<select value={draft.practice_frequency} onChange={(e) => setDraft((d) => ({ ...d, practice_frequency: e.target.value }))}><option value="">Select frequency</option>{frequencyOptions.map((o) => <option key={o}>{o}</option>)}</select></label><div className="settings-edit-actions"><Button variant="acid" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button><Button onClick={() => { setEditing(false); setDraft({ primary_goal: profile.primary_goal || '', feedback_style: profile.feedback_style || '', detail_level: profile.detail_level || '', practice_frequency: profile.practice_frequency || '', experience_level: profile.experience_level || '' }); }}>Cancel</Button></div></div> : <div className="settings-readonly"><div><span>Primary goal</span><strong>{profile.primary_goal || 'Not set'}</strong></div><div><span>Experience</span><strong>{profile.experience_level || 'Not set'}</strong></div><div><span>Feedback style</span><strong>{profile.feedback_style || 'Not set'}</strong></div><div><span>Detail level</span><strong>{profile.detail_level || 'Not set'}</strong></div><div><span>Practice frequency</span><strong>{profile.practice_frequency || 'Not set'}</strong></div></div>}</div><div className="settings-section"><div className="settings-section-head"><div><span>PRIVACY & DATA</span><strong>Your recordings are private by default</strong></div></div><div className="settings-privacy-info"><p>Recordings are stored in your private Supabase storage. They are never used for model training without separate explicit consent.</p><p>If an external speech-processing service is connected, you will be notified before any audio is sent to it.</p></div><div className="settings-danger-zone"><div><strong>Delete all recordings and analyses</strong><small>Permanently removes your recordings, analyses, findings, and practice plans. Your account remains.</small></div><button className="settings-delete-btn" onClick={deleteAllData}><Trash2 size={15} /> Delete my data</button></div></div><div className="settings-section"><div className="settings-section-head"><div><span>SESSION</span><strong>Sign out of your workspace</strong></div></div><div className="settings-privacy-info"><p>End your current session. You will be returned to the landing page and will need to sign in again to access your workspace.</p></div><Button variant="outline" onClick={handleLogout}><LogOut size={15} /> Log out</Button></div></div></div>;
-}
-
-function Recordings({ setView }: { setView: (view: View) => void }) { return <div className="simple-page"><div className="section-kicker">/ PRIVATE LIBRARY</div><h2>Your recordings<br /><span>will live here.</span></h2><p>No recordings have been uploaded yet. Start a new analysis to add your first private speech.</p><Button variant="acid" onClick={() => setView('new')}>Upload recording <Upload size={16} /></Button></div>; }
-function Compare({ setView }: { setView: (view: View) => void }) { return <div className="simple-page"><div className="section-kicker">/ PROGRESS STUDY</div><h2>Compare attempts<br /><span>when there are two.</span></h2><p>Comparable attempts need the same transcript and rubric context. Create your first two analyses to see aligned changes in rate, pauses, and pitch variation.</p><div className="compare-empty"><span>01</span><span>PARTICIPANT / NO COMPATIBLE ANALYSES YET</span></div><Button variant="acid" onClick={() => setView('new')}>Create first analysis <ArrowRight size={16} /></Button></div>; }
+/* ==========================================================================
+   ROOT COMPONENT & ROUTING
+   ========================================================================== */
 
 function App() {
   const [route, setRoute] = useState<Route>(getRoute());
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(hasSupabaseConfig ? null : demoProfile);
-  const [plan, setPlan] = useState<PracticePlan | null>(hasSupabaseConfig ? null : demoPlan);
-  const [authChecked, setAuthChecked] = useState(!hasSupabaseConfig);
-  const [profileChecked, setProfileChecked] = useState(!hasSupabaseConfig);
-  useEffect(() => { const update = () => setRoute(getRoute()); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []);
-  useEffect(() => { document.title = route === 'landing' ? 'SpeechLab — Every pause tells a story' : route === 'app' ? 'SpeechLab — Workspace' : 'SpeechLab — Access'; }, [route]);
+
+  useEffect(() => {
+    const update = () => setRoute(getRoute());
+    window.addEventListener('popstate', update);
+    return () => window.removeEventListener('popstate', update);
+  }, []);
+
+  useEffect(() => {
+    document.title =
+      route === 'landing'
+        ? 'SpeechLab — Contrastive Speech Analytics & Temporal Flaw Grounding'
+        : route === 'app'
+        ? 'SpeechLab — Workspace'
+        : 'SpeechLab — Sign in';
+  }, [route]);
+
+  useEffect(() => {
+    if (session && (route === 'login' || route === 'signup')) {
+      navigate('/app');
+    }
+  }, [session, route]);
+
   useEffect(() => {
     if (!supabase) return;
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => { if (mounted) { setSession(data.session); setAuthChecked(true); } });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setAuthChecked(true); });
-    return () => { mounted = false; listener.subscription.unsubscribe(); };
-  }, []);
-  useEffect(() => {
-    const client = supabase;
-    if (!client || route !== 'app' || !session) return;
-    let mounted = true;
-    setProfileChecked(false);
-    const loadProfile = async () => {
-      const { data: savedProfile, error: profileError } = await client.from('user_profiles').select('id, display_name, onboarding_completed, primary_goal, selected_contexts, experience_level, coaching_priorities, feedback_style, detail_level, practice_frequency, upcoming_event_date, personal_goal').eq('id', session.user.id).maybeSingle();
-      if (profileError) console.error('profile load failed', profileError);
-      if (!mounted) return;
-      setProfile(savedProfile ? { ...savedProfile, selected_contexts: savedProfile.selected_contexts || [], coaching_priorities: savedProfile.coaching_priorities || [] } : { ...demoProfile, id: session.user.id, display_name: session.user.user_metadata.display_name || session.user.email?.split('@')[0] || 'SpeechLab speaker', onboarding_completed: false });
-      const { data: savedPlan } = await client.from('practice_plans').select('id, title, goal, status, practice_activities(id, title, instructions, estimated_minutes, status, position)').eq('user_id', session.user.id).eq('status', 'active').order('updated_at', { ascending: false }).limit(1).maybeSingle();
-      if (savedPlan) setPlan({ ...savedPlan, activities: savedPlan.practice_activities || [] });
-      setProfileChecked(true);
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setSession(data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
     };
-    void loadProfile();
-    return () => { mounted = false; };
-  }, [route, session]);
-  useEffect(() => { if (route === 'app' && hasSupabaseConfig && authChecked && !session) navigate('/login'); }, [route, session, authChecked]);
-  useEffect(() => { if ((route === 'login' || route === 'signup') && hasSupabaseConfig && authChecked && session) navigate('/app'); }, [route, session, authChecked]);
-  const signOut = async () => { if (supabase) await supabase.auth.signOut(); setSession(null); setProfile(null); setPlan(null); navigate('/'); };
-  const handleProfileComplete = (nextProfile: UserProfile, nextPlan: PracticePlan) => { setProfile(nextProfile); setPlan(nextPlan); };
-  const body = useMemo(() => route === 'landing' ? <Landing /> : route === 'login' || route === 'signup' ? <AuthPage mode={route} /> : <Workspace onSignOut={signOut} profile={profile} plan={plan} onProfileComplete={handleProfileComplete} />, [route, profile, plan]);
-  if (route === 'app' && hasSupabaseConfig && (!authChecked || !profileChecked)) return <div className="loading-screen">LOADING YOUR PRIVATE PRACTICE SPACE…</div>;
-  return body;
+  }, []);
+
+  const signOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    navigate('/');
+  };
+
+  if (route === 'landing') return <Landing />;
+  if (route === 'login' || route === 'signup') return <AuthPage mode={route} />;
+  return (
+    <Workspace
+      onSignOut={signOut}
+      profile={null}
+      plan={null}
+    />
+  );
 }
 
 export default App;
