@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   AudioLines,
@@ -14,6 +15,7 @@ import {
   FileAudio,
   FolderOutput,
   Headphones,
+  KeyRound,
   LogOut,
   LockKeyhole,
   Mail,
@@ -34,7 +36,18 @@ import {
   Volume2,
   Zap,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase, hasSupabaseConfig, supabaseUrl } from '@/lib/supabase';
+import {
+  signUpWithEmail,
+  signInUser,
+  verifyEmailOtp,
+  resendVerificationOtp,
+  signInWithGoogleOAuth,
+  getResendCooldownRemaining,
+  checkAuthHealth,
+  sendPasswordReset,
+} from '@/lib/authService';
+
 
 type Route = 'landing' | 'login' | 'signup' | 'app';
 type View = 'overview' | 'new' | 'results' | 'architecture' | 'practice' | 'recordings' | 'compare' | 'rubrics' | 'settings';
@@ -500,35 +513,165 @@ function Landing() {
 
 function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const isSignup = mode === 'signup';
+  const [step, setStep] = useState<'form' | 'verify_otp' | 'forgot'>('form');
+  const [authMethod, setAuthMethod] = useState<'password' | 'otp'>('password');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otpToken, setOtpToken] = useState('');
   const [error, setError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [backendHealth, setBackendHealth] = useState<{ healthy: boolean; statusText: string; url: string } | null>(null);
+
+  // Check backend health on mount to proactively detect unreachability
+  useEffect(() => {
+    let active = true;
+    checkAuthHealth().then((health) => {
+      if (active) {
+        setBackendHealth(health);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Cooldown countdown timer for OTP resend
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown]);
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setStatusMessage('');
+    setLoading(true);
+    const result = await signInWithGoogleOAuth();
+    setLoading(false);
+    if (!result.success && result.error) {
+      setError(result.error);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!email) return;
+    setError('');
+    const res = await resendVerificationOtp(email);
+    if (!res.success) {
+      setError(res.error || 'Failed to resend verification code.');
+    } else {
+      setStatusMessage(res.message || 'A fresh verification code has been dispatched.');
+      setCooldown(60);
+    }
+  };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
-    if (!email || !password || (isSignup && !name)) {
-      setError('Complete every required field to continue.');
-      return;
-    }
-    setLoading(true);
-    if (!supabase) {
-      // In preview without supabase creds, navigate cleanly to app demo workspace
+    setStatusMessage('');
+
+    // OTP Verification step
+    if (step === 'verify_otp') {
+      if (!otpToken || otpToken.trim().length < 6) {
+        setError('Please enter the complete 6-digit verification code.');
+        return;
+      }
+      setLoading(true);
+      const res = await verifyEmailOtp(email, otpToken);
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || 'Invalid or expired verification code.');
+        return;
+      }
+      setStatusMessage('Verification successful! Taking you to your workspace…');
       setTimeout(() => {
-        setLoading(false);
         navigate('/app');
       }, 500);
       return;
     }
-    const result = isSignup
-      ? await supabase.auth.signUp({ email, password, options: { data: { display_name: name } } })
-      : await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (result.error) {
-      setError(result.error.message);
+
+    // Password reset step
+    if (step === 'forgot') {
+      if (!email) {
+        setError('Please enter your email address.');
+        return;
+      }
+      setLoading(true);
+      const res = await sendPasswordReset(email);
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || 'Failed to send reset code.');
+        return;
+      }
+      setStatusMessage(res.message || 'A password reset link and instructions have been sent to your email.');
       return;
+    }
+
+    // Standard Sign Up
+    if (isSignup) {
+      if (!name || !email || !password) {
+        setError('Complete every required field to continue.');
+        return;
+      }
+      setLoading(true);
+      const res = await signUpWithEmail(name, email, password);
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || 'Registration failed.');
+        return;
+      }
+      if (res.needsVerification) {
+        setStep('verify_otp');
+        setStatusMessage(res.message || 'Check your email for a 6-digit verification code to complete your registration.');
+        setCooldown(getResendCooldownRemaining(email) || 60);
+        return;
+      }
+      navigate('/app');
+      return;
+    }
+
+    // Standard Sign In
+    if (!email) {
+      setError('Please enter your email address.');
+      return;
+    }
+
+    if (authMethod === 'password') {
+      if (!password) {
+        setError('Please enter your password.');
+        return;
+      }
+      setLoading(true);
+      const res = await signInUser(email, password);
+      setLoading(false);
+      if (!res.success) {
+        if (res.needsVerification) {
+          setStep('verify_otp');
+          setError(res.error || 'Your email address has not been verified yet.');
+          setCooldown(getResendCooldownRemaining(email) || 60);
+          return;
+        }
+        setError(res.error || 'Sign in failed. Please check your credentials.');
+        return;
+      }
+      navigate('/app');
+    } else {
+      // Passwordless Email OTP
+      setLoading(true);
+      const res = await signInUser(email);
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || 'Failed to send sign-in code.');
+        return;
+      }
+      setStep('verify_otp');
+      setStatusMessage(res.message || 'A single-use 6-digit sign-in code has been sent to your email.');
+      setCooldown(60);
     }
   };
 
@@ -566,115 +709,275 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
         <div className="auth-card">
           <div className="auth-card-header">
             <ShieldCheck size={20} />
-            <span>{isSignup ? 'Create account securely' : 'Sign in securely'}</span>
+            <span>
+              {step === 'verify_otp'
+                ? 'Verify your email'
+                : step === 'forgot'
+                ? 'Reset password'
+                : isSignup
+                ? 'Create account securely'
+                : 'Sign in securely'}
+            </span>
           </div>
 
-          <button
-            type="button"
-            className="google-auth-btn"
-            onClick={() => {
-              if (supabase) {
-                supabase.auth.signInWithOAuth({ provider: 'google' });
-              } else {
-                navigate('/app');
-              }
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            Continue with Google
-          </button>
+          {/* Backend reachability diagnostic alert */}
+          {backendHealth && !backendHealth.healthy && (
+            <div className="auth-backend-alert" role="alert">
+              <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <strong>Backend service unreachable</strong>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', lineHeight: 1.4 }}>
+                  Cannot connect to Supabase at <code>{backendHealth.url || 'unspecified host'}</code>. Please ensure your Supabase project is active and that <code>VITE_SUPABASE_URL</code> in <code>.env</code> is configured with a valid, reachable endpoint.
+                </p>
+              </div>
+            </div>
+          )}
 
-          <div className="auth-divider">or use email</div>
+          {/* Status Message */}
+          {statusMessage && (
+            <div className="auth-status-message">
+              <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>{statusMessage}</div>
+            </div>
+          )}
 
-          <form className="auth-form" onSubmit={submit}>
-            {isSignup && (
+          {/* Error Message */}
+          {error && (
+            <div className="form-error" style={{ color: 'var(--color-primary)', fontSize: '12px', marginBottom: '14px', lineHeight: 1.4 }}>
+              {error}
+            </div>
+          )}
+
+          {step === 'verify_otp' ? (
+            /* OTP Verification Screen */
+            <form className="auth-form" onSubmit={submit}>
+              <div className="otp-info">
+                We sent a 6-digit verification code to <strong>{email}</strong>. Enter it below to confirm your account:
+              </div>
+
               <label>
-                Full name
-                <input
-                  className="form-input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
-                />
+                6-digit code
+                <div className="input-with-icon">
+                  <KeyRound size={16} />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    className="form-input otp-input"
+                    value={otpToken}
+                    onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    autoFocus
+                  />
+                </div>
               </label>
-            )}
 
-            <label>
-              Email address
-              <div className="input-with-icon">
-                <Mail size={16} />
-                <input
-                  type="email"
-                  className="form-input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  autoComplete="email"
-                />
-              </div>
-            </label>
+              <Button type="submit" variant="primary" disabled={loading || otpToken.length < 6}>
+                {loading ? 'Verifying…' : 'Verify & continue'}
+              </Button>
 
-            <label>
-              Password
-              <div className="input-with-icon">
-                <LockKeyhole size={16} />
-                <input
-                  type="password"
-                  className="form-input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
-              </div>
-            </label>
+              <div className="otp-actions">
+                <button
+                  type="button"
+                  className="form-link"
+                  onClick={() => {
+                    setStep('form');
+                    setError('');
+                  }}
+                >
+                  &larr; Back to {isSignup ? 'sign up' : 'sign in'}
+                </button>
 
-            {!isSignup && (
-              <div className="form-row">
-                <label className="check-label">
-                  <input type="checkbox" defaultChecked />
-                  <span>Remember me</span>
-                </label>
-                <button type="button" className="form-link">
-                  Forgot password?
+                <button
+                  type="button"
+                  className="form-link"
+                  disabled={cooldown > 0}
+                  onClick={handleResendOtp}
+                  style={{ opacity: cooldown > 0 ? 0.6 : 1 }}
+                >
+                  {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
                 </button>
               </div>
-            )}
+            </form>
+          ) : step === 'forgot' ? (
+            /* Forgot Password Screen */
+            <form className="auth-form" onSubmit={submit}>
+              <div className="otp-info">
+                Enter your registered email address and we will send you a password recovery link:
+              </div>
 
-            {error && <div className="form-error" style={{ color: 'var(--color-primary)', fontSize: '12px' }}>{error}</div>}
+              <label>
+                Email address
+                <div className="input-with-icon">
+                  <Mail size={16} />
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    autoFocus
+                  />
+                </div>
+              </label>
 
-            <Button type="submit" variant="primary" disabled={loading}>
-              {loading ? 'Connecting…' : isSignup ? 'Create account' : 'Sign in'}
-            </Button>
-          </form>
+              <Button type="submit" variant="primary" disabled={loading || !email}>
+                {loading ? 'Sending link…' : 'Send reset link'}
+              </Button>
 
-          <div className="auth-switch">
-            {isSignup ? 'Already have an account?' : 'New to SpeechLab?'}
-            <button type="button" onClick={() => navigate(isSignup ? '/login' : '/signup')}>
-              {isSignup ? 'Sign in' : 'Create an account'}
-            </button>
-          </div>
+              <div style={{ textAlign: 'center', marginTop: '14px' }}>
+                <button
+                  type="button"
+                  className="form-link"
+                  onClick={() => {
+                    setStep('form');
+                    setError('');
+                  }}
+                >
+                  &larr; Back to sign in
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Main Sign In / Sign Up Screen */
+            <>
+              <button
+                type="button"
+                className="google-auth-btn"
+                disabled={loading}
+                onClick={handleGoogleSignIn}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                Continue with Google
+              </button>
 
-          <div className="auth-note">
-            Google provider setup is required in Supabase before OAuth can complete. Email authentication uses Supabase's secure hosted session flow.
-          </div>
+              <div className="auth-divider">or use email</div>
+
+              <form className="auth-form" onSubmit={submit}>
+                {isSignup && (
+                  <label>
+                    Full name
+                    <input
+                      className="form-input"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your name"
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Email address
+                  <div className="input-with-icon">
+                    <Mail size={16} />
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      autoComplete="email"
+                    />
+                  </div>
+                </label>
+
+                {(!isSignup && authMethod === 'otp') ? (
+                  <div className="otp-info" style={{ fontSize: '12px', marginTop: '-4px' }}>
+                    We'll email you a secure 6-digit one-time code to sign in instantly without a password.
+                  </div>
+                ) : (
+                  <label>
+                    Password
+                    <div className="input-with-icon">
+                      <LockKeyhole size={16} />
+                      <input
+                        type="password"
+                        className="form-input"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        autoComplete={isSignup ? 'new-password' : 'current-password'}
+                      />
+                    </div>
+                  </label>
+                )}
+
+                {!isSignup && (
+                  <div className="form-row">
+                    <button
+                      type="button"
+                      className="form-link"
+                      onClick={() => {
+                        setAuthMethod((prev) => (prev === 'password' ? 'otp' : 'password'));
+                        setError('');
+                      }}
+                    >
+                      {authMethod === 'password' ? 'Sign in with email OTP' : 'Sign in with password'}
+                    </button>
+                    {authMethod === 'password' && (
+                      <button
+                        type="button"
+                        className="form-link"
+                        onClick={() => {
+                          setStep('forgot');
+                          setError('');
+                        }}
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <Button type="submit" variant="primary" disabled={loading}>
+                  {loading
+                    ? 'Connecting…'
+                    : isSignup
+                    ? 'Create account'
+                    : authMethod === 'otp'
+                    ? 'Send sign-in code'
+                    : 'Sign in'}
+                </Button>
+              </form>
+
+              <div className="auth-switch">
+                {isSignup ? 'Already have an account?' : 'New to SpeechLab?'}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setStatusMessage('');
+                    navigate(isSignup ? '/login' : '/signup');
+                  }}
+                >
+                  {isSignup ? 'Sign in' : 'Create an account'}
+                </button>
+              </div>
+
+              <div className="auth-note">
+                Google OAuth and email verification use Supabase Authentication. Ensure your project is active and credentials are set in <code>.env</code>.
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
